@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  RECEIVED
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum SaleUnit {
+  EACH
+  LB
+}
+
+enum FulfillmentMethod {
+  DELIVERY
+  PICKUP
+}
+
+enum DiscountType {
+  NONE
+  PERCENT
+  FIXED
+}
+
+enum DiscountCodeType {
+  PERCENT
+  FIXED
+}
+
+enum DiscountScope {
+  ORDER
+  PRODUCT
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(CUSTOMER)
+  orders       Order[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([email])
+  @@index([role])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  email     String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String
+  imageUrl    String    @default("/images/placeholder.svg")
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SavedCart {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  items     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OperationalEvent {
+  id        String   @id @default(cuid())
+  type      String
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type])
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  name        String
+  slug        String      @unique
+  description String
+  priceCents  Int
+  discountPercent Int?
+  discountType DiscountType @default(NONE)
+  discountValue Int?
+  imageUrl    String
+  stock       Float
+  lowStockThreshold Float @default(5)
+  saleUnit    SaleUnit    @default(EACH)
+  isActive    Boolean     @default(true)
+  featuredHome Boolean    @default(false)
+  featuredBanner Boolean  @default(false)
+  featuredFresh Boolean   @default(false)
+  featuredPopular Boolean @default(false)
+  categoryId  String
+  category    Category    @relation(fields: [categoryId], references: [id])
+  orderItems  OrderItem[]
+  discountCodes DiscountCode[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([categoryId])
+  @@index([name])
+  @@index([stock])
+}
+
+model DiscountCode {
+  id                String           @id @default(cuid())
+  code              String           @unique
+  type              DiscountCodeType
+  scope             DiscountScope    @default(ORDER)
+  percentOff        Int?
+  amountOffCents    Int?
+  productId         String?
+  isActive          Boolean          @default(true)
+  startsAt          DateTime?
+  endsAt            DateTime?
+  maxRedemptions    Int?
+  redemptionCount   Int              @default(0)
+  minimumOrderCents Int?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  product           Product?         @relation(fields: [productId], references: [id])
+
+  @@index([code])
+  @@index([isActive])
+  @@index([productId])
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  accessToken    String?
+  userId         String?
+  customerId     String?
+  customerName   String
+  customerEmail  String
+  customerPhone  String?
+  fulfillmentMethod FulfillmentMethod @default(DELIVERY)
+  deliveryAddress String
+  deliveryInstructions String?
+  deliveryWindow String?
+  scheduledDate DateTime?
+  scheduledWindow String?
+  deliveryFeeCents Int
+  subtotalCents  Int
+  discountCode   String?
+  discountCents  Int           @default(0)
+  totalCents     Int
+  status         OrderStatus   @default(RECEIVED)
+  paymentStatus  PaymentStatus @default(PENDING)
+  stockReduced   Boolean       @default(false)
+  stripeSessionId String?
+  paidAt          DateTime?
+  deliveredAt     DateTime?
+  driverName      String?
+  estimatedDeliveryTime DateTime?
+  user           User?         @relation(fields: [userId], references: [id])
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  items          OrderItem[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([customerEmail])
+  @@index([createdAt])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([scheduledDate])
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  orderId    String
+  productId  String
+  quantity   Float
+  priceCents Int
+  saleUnit   SaleUnit @default(EACH)
+  productName String
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
