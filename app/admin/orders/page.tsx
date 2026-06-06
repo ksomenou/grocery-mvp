@@ -209,7 +209,7 @@ export default async function AdminOrdersPage({
                   <div className="order-summary-row">
                     <span>{orderDate(order.createdAt)}</span>
                     <strong>{formatMoney(order.totalCents)}</strong>
-                    <Link className="view-detail-link" href={`/admin/orders/${order.id}`}>View details</Link>
+                    <Link className="view-detail-link" href={`/admin/orders/${order.id}`} prefetch={false}>View details</Link>
                   </div>
                 </div>
               </article>
@@ -219,11 +219,11 @@ export default async function AdminOrdersPage({
       </section>
       {orderCount > adminOrderPageSize ? (
         <nav className="pagination-row admin-pagination" aria-label="Admin order pagination">
-          <Link className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage - 1)}>
+          <Link className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage - 1)} prefetch={false}>
             Previous
           </Link>
           <span>Page {currentPage} of {totalPages}</span>
-          <Link className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage + 1)}>
+          <Link className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage + 1)} prefetch={false}>
             Next
           </Link>
         </nav>

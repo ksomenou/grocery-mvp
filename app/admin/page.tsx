@@ -416,7 +416,7 @@ export default async function AdminPage() {
         <section className="ops-panel orders-panel">
           <div className="ops-panel-head">
             <div><h2>Recent orders</h2><p>Payment, fulfillment, and timing at a glance.</p></div>
-            <Link className="button secondary" href="/admin/orders">View orders</Link>
+            <Link className="button secondary" href="/admin/orders" prefetch={false}>View orders</Link>
           </div>
           <div className="ops-order-list">
             {recentOrders.length === 0 ? <p className="dashboard-empty">Orders will appear here as customers check out.</p> : recentOrders.map((order) => {
@@ -437,7 +437,7 @@ export default async function AdminPage() {
                   <strong>{formatMoney(order.totalCents)}</strong>
                   <span className={`status-badge payment-${order.paymentStatus.toLowerCase()}`}>{paymentStatusLabel(order.paymentStatus)}</span>
                   <span className={`status-badge status-${order.status.toLowerCase()}`}>{orderStatusLabel(order.status, order.fulfillmentMethod)}</span>
-                  <Link className="view-detail-link" href={`/admin/orders/${order.id}`}>View details</Link>
+                  <Link className="view-detail-link" href={`/admin/orders/${order.id}`} prefetch={false}>View details</Link>
                 </div>
               </article>
               )
@@ -502,7 +502,7 @@ export default async function AdminPage() {
         <section className="ops-panel inventory-panel">
           <div className="ops-panel-head">
             <div><h2>Inventory watchlist</h2><p>Low stock and sold-out counts from live inventory.</p></div>
-            <Link className="button secondary" href="/admin/products">Manage</Link>
+            <Link className="button secondary" href="/admin/products" prefetch={false}>Manage</Link>
           </div>
           <div className="inventory-list">
             {lowStockCount === 0 && soldOutCount === 0 ? (
@@ -515,7 +515,7 @@ export default async function AdminPage() {
                 </div>
                 <div className="stock-progress-wrap">
                   <span className={`stock-state ${soldOutCount > 0 ? "urgent" : "low"}`}>{soldOutCount > 0 ? "Urgent" : "Low stock"}</span>
-                  <Link className="restock-link" href="/admin/inventory">Restock</Link>
+                  <Link className="restock-link" href="/admin/inventory" prefetch={false}>Restock</Link>
                 </div>
               </article>
             )}
@@ -541,10 +541,10 @@ export default async function AdminPage() {
           <aside className="ops-panel quick-actions-panel">
             <div className="ops-panel-head"><div><h2>Quick actions</h2><p>Common store tasks.</p></div></div>
             <div className="quick-action-grid">
-              <Link href="/admin/products">Add product</Link>
-              <Link href="/admin/discounts">Create discount</Link>
-              <Link href="/admin/orders">View orders</Link>
-              <Link href="/admin/inventory">Restock inventory</Link>
+              <Link href="/admin/products" prefetch={false}>Add product</Link>
+              <Link href="/admin/discounts" prefetch={false}>Create discount</Link>
+              <Link href="/admin/orders" prefetch={false}>View orders</Link>
+              <Link href="/admin/inventory" prefetch={false}>Restock inventory</Link>
             </div>
           </aside>
 

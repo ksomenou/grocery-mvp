@@ -25,7 +25,7 @@ export function AdminNav({
         {links.map(([key, href, label]) => {
           const badgeCount = key === "orders" ? pendingOrderCount : key === "products" ? lowStockCount : 0
           return (
-          <Link className={active === key ? "active" : ""} href={href} key={key}>
+          <Link className={active === key ? "active" : ""} href={href} key={key} prefetch={false}>
             {label}
             {badgeCount > 0 ? <span className="admin-tab-badge">{badgeCount}</span> : null}
           </Link>

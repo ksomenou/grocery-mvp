@@ -48,7 +48,7 @@ export default async function AdminInventoryPage({
         <p className="admin-kicker">Store admin</p>
         <h1>Inventory</h1>
         <p>Restock products, monitor low stock, and keep grocery availability accurate.</p>
-        <Link className="button secondary admin-header-action" href="/admin/products">Add product</Link>
+        <Link className="button secondary admin-header-action" href="/admin/products" prefetch={false}>Add product</Link>
         <AdminNav active="dashboard" />
       </div>
 

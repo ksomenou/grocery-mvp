@@ -90,7 +90,7 @@ export function MobileNavMenu({ logoutAction, userRole }: MobileNavMenuProps) {
           </div>
           <nav className="mobile-menu-links" aria-label="Mobile menu links">
             {mainLinks.map((link) => (
-              <Link href={link.href} key={link.href} onClick={() => setIsOpen(false)}>
+              <Link href={link.href} key={link.href} onClick={() => setIsOpen(false)} prefetch={link.href.startsWith("/admin") ? false : undefined}>
                 {link.label}
               </Link>
             ))}

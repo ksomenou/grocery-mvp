@@ -74,7 +74,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <Link href="/products">Products</Link>
               {user ? (
                 <>
-                  {user.role === "ADMIN" ? <Link href="/admin">Admin</Link> : <Link href="/account">Account</Link>}
+                  {user.role === "ADMIN" ? <Link href="/admin" prefetch={false}>Admin</Link> : <Link href="/account">Account</Link>}
                   <form action={logoutUser}>
                     <button type="submit">Logout</button>
                   </form>

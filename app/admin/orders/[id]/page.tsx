@@ -84,7 +84,7 @@ export default async function AdminOrderDetailsPage({
         <h1>Order details</h1>
         <p>Review customer, items, totals, payment, and fulfillment workflow.</p>
         <AdminNav active="orders" lowStockCount={lowStockCount} pendingOrderCount={pendingOrders} />
-        <Link className="button secondary admin-header-action" href="/admin/orders">Back to orders</Link>
+        <Link className="button secondary admin-header-action" href="/admin/orders" prefetch={false}>Back to orders</Link>
       </div>
 
       <article className="admin-card order-card">

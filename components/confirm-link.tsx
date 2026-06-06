@@ -23,6 +23,7 @@ export function ConfirmLink({
           event.preventDefault()
         }
       }}
+      prefetch={href.startsWith("/admin") ? false : undefined}
     >
       {children}
     </Link>
