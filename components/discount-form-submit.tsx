@@ -5,7 +5,10 @@ import { useFormStatus } from "react-dom"
 
 function formValidationReason(form: HTMLFormElement) {
   const data = new FormData(form)
-  const code = String(data.get("code") ?? "").trim()
+  const codeInput = form.elements.namedItem("code")
+  const code = codeInput instanceof HTMLInputElement
+    ? codeInput.value.trim()
+    : String(data.get("code") ?? "").trim()
   const type = String(data.get("type") ?? "PERCENT")
   const scope = String(data.get("scope") ?? "ORDER")
   const productId = String(data.get("productId") ?? "").trim()

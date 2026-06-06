@@ -102,6 +102,7 @@ export function ProductDetailCartControl({ product }: { product: Omit<CartItem, 
           +
         </button>
       </div>
+      {product.saleUnit === "LB" ? <p className="detail-quantity-note">Adjusts by 0.5 lb</p> : null}
       <button
         className={`button detail-add-button add-confirm-button ${justAdded ? "confirmed" : ""}`}
         disabled={product.stock <= 0}

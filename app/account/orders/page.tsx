@@ -1,7 +1,8 @@
 import Link from "next/link"
 
+import { CustomerOrderStatus } from "@/components/customer-order-status"
 import { formatLineItem, formatMoney, titleCase } from "@/lib/format"
-import { orderStatusLabel } from "@/lib/orders"
+import { orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
 import { formatSchedule } from "@/lib/scheduling"
 
@@ -62,6 +63,22 @@ export default async function AccountOrdersPage({
                       <p className="muted">{titleCase(order.fulfillmentMethod.toLowerCase())} schedule: {schedule}</p>
                     ) : order.deliveryWindow ? (
                       <p className="muted">{titleCase(order.fulfillmentMethod.toLowerCase())} window: {order.deliveryWindow}</p>
+                    ) : null}
+                    {token ? (
+                      <CustomerOrderStatus
+                        initial={{
+                          fulfillmentMethod: order.fulfillmentMethod,
+                          isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "REFUNDED",
+                          paymentLabel: paymentStatusLabel(order.paymentStatus),
+                          paymentStatus: order.paymentStatus,
+                          schedule,
+                          status: order.status,
+                          statusLabel: orderStatusLabel(order.status, order.fulfillmentMethod),
+                          updatedAt: order.updatedAt.toISOString()
+                        }}
+                        orderId={order.id}
+                        token={token}
+                      />
                     ) : null}
                   </div>
                   <strong>{formatMoney(order.totalCents)}</strong>

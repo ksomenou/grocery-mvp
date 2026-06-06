@@ -8,6 +8,10 @@ export async function GET() {
   try {
     await requireAdmin()
     const order = await prisma.order.findFirst({
+      where: {
+        paymentStatus: "PAID",
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
+      },
       orderBy: { createdAt: "desc" },
       select: {
         customerName: true,

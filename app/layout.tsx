@@ -18,6 +18,7 @@ import { storeName } from "@/lib/store"
 import "./globals.css"
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "https://fainternationalgrocery.com"),
   title: {
     default: storeName,
     template: `%s | ${storeName}`
@@ -25,13 +26,26 @@ export const metadata: Metadata = {
   description: `Shop fresh groceries for local delivery or pickup with ${storeName}.`,
   applicationName: storeName,
   icons: {
-    icon: "/icon.svg"
+    icon: "/icon.png",
+    apple: "/apple-icon.png"
   },
   openGraph: {
     title: storeName,
     description: "Fresh groceries for local delivery or pickup.",
+    images: [
+      {
+        url: "/opengraph-image.png",
+        alt: `${storeName} logo`
+      }
+    ],
     siteName: storeName,
     type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: storeName,
+    description: "Fresh groceries for local delivery or pickup.",
+    images: ["/opengraph-image.png"]
   }
 }
 
@@ -73,7 +87,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               )}
             </nav>
             <div className="nav-actions">
-              <MobileNavMenu />
+              <MobileNavMenu logoutAction={logoutUser} userRole={user?.role ?? null} />
               <CartBadge />
             </div>
           </div>

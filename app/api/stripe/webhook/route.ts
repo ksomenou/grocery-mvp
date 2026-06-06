@@ -2,7 +2,14 @@ import { NextResponse } from "next/server"
 import Stripe from "stripe"
 
 import { logError, logInfo } from "@/lib/log"
-import { markOrderPaidAndReduceStock, markOrderPaymentFailedBySession, markOrderRefundedBySession } from "@/lib/orders"
+import {
+  markOrderPaidAndReduceStock,
+  markOrderPaidAndReduceStockByPaymentIntent,
+  markOrderPaymentFailedByPaymentIntent,
+  markOrderPaymentFailedBySession,
+  markOrderRefundedByPaymentIntent,
+  markOrderRefundedBySession
+} from "@/lib/orders"
 import { getStripe } from "@/lib/stripe"
 
 export async function POST(request: Request) {
@@ -26,6 +33,22 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (event.type === "payment_intent.succeeded") {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent
+      const orderId = paymentIntent.metadata?.orderId
+
+      if (orderId) {
+        await markOrderPaidAndReduceStockByPaymentIntent(orderId, paymentIntent.id)
+        logInfo("Processed payment_intent.succeeded webhook.", { orderId, stripePaymentIntentId: paymentIntent.id })
+      }
+    }
+
+    if (event.type === "payment_intent.payment_failed" || event.type === "payment_intent.canceled") {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent
+      await markOrderPaymentFailedByPaymentIntent(paymentIntent.id)
+      logInfo("Processed failed or canceled payment intent webhook.", { stripePaymentIntentId: paymentIntent.id, eventType: event.type })
+    }
+
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session
       const orderId = session.metadata?.orderId
@@ -44,6 +67,11 @@ export async function POST(request: Request) {
 
     if (event.type === "charge.refunded") {
       const charge = event.data.object as Stripe.Charge
+      if (typeof charge.payment_intent === "string") {
+        await markOrderRefundedByPaymentIntent(charge.payment_intent)
+        logInfo("Processed charge.refunded webhook by payment intent.", { stripePaymentIntentId: charge.payment_intent })
+      }
+
       const checkoutSessions = await getStripe().checkout.sessions.list({
         payment_intent: typeof charge.payment_intent === "string" ? charge.payment_intent : undefined,
         limit: 1

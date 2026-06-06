@@ -11,7 +11,7 @@ export type SessionPayload = {
 }
 
 function authSecret() {
-  return process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? process.env.ADMIN_SESSION_SECRET ?? process.env.ADMIN_PASSWORD
+  return process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? process.env.ADMIN_SESSION_SECRET
 }
 
 function base64UrlEncode(value: Uint8Array) {

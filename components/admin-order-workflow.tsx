@@ -1,8 +1,9 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 
 import { updateOrderStatus, type ActionState } from "@/lib/actions"
+import { copyText } from "@/lib/clipboard"
 
 type FulfillmentStatus =
   | "RECEIVED"
@@ -99,6 +100,7 @@ export function OrderWorkflowActions({
   orderId,
   paymentStatus,
   phone,
+  showTimeline = true,
   status
 }: {
   address?: string | null
@@ -107,12 +109,48 @@ export function OrderWorkflowActions({
   orderId: string
   paymentStatus: PaymentStatus
   phone?: string | null
+  showTimeline?: boolean
   status: FulfillmentStatus
 }) {
   const [currentStatus, setCurrentStatus] = useState(status)
+  const [currentPaymentStatus, setCurrentPaymentStatus] = useState(paymentStatus)
   const [pendingStatus, setPendingStatus] = useState<FulfillmentStatus | null>(null)
   const [isPending, startTransition] = useTransition()
-  const actions = useMemo(() => nextStatuses(currentStatus, paymentStatus, fulfillmentMethod), [currentStatus, fulfillmentMethod, paymentStatus])
+  const actions = useMemo(() => nextStatuses(currentStatus, currentPaymentStatus, fulfillmentMethod), [currentPaymentStatus, currentStatus, fulfillmentMethod])
+
+  useEffect(() => {
+    if (currentStatus === "DELIVERED" || currentStatus === "CANCELLED" || currentStatus === "REFUNDED") {
+      return
+    }
+
+    let cancelled = false
+    const poll = async () => {
+      if (isPending) {
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/admin/orders/${orderId}/status`, { cache: "no-store" })
+        if (!response.ok) {
+          return
+        }
+
+        const next = await response.json() as { paymentStatus: PaymentStatus; status: FulfillmentStatus }
+        if (!cancelled) {
+          setCurrentStatus(next.status)
+          setCurrentPaymentStatus(next.paymentStatus)
+        }
+      } catch {
+        // Keep the current optimistic status if polling is interrupted.
+      }
+    }
+
+    const timer = window.setInterval(poll, 12000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [currentStatus, isPending, orderId])
 
   function updateStatus(next: FulfillmentStatus) {
     if (next === "CANCELLED" && !window.confirm("Cancel this order?")) {
@@ -140,16 +178,17 @@ export function OrderWorkflowActions({
 
   async function copyAddress() {
     if (!address) return
-    await navigator.clipboard.writeText(address)
-    toast("Address copied.")
+    try {
+      await copyText(address)
+      toast("Address copied.")
+    } catch {
+      toast("Could not copy address. Please copy manually.", false)
+    }
   }
 
   return (
     <div className={`order-workflow ${className}`}>
-      <FulfillmentTimeline fulfillmentMethod={fulfillmentMethod} status={currentStatus} />
-      {paymentStatus !== "PAID" && currentStatus !== "CANCELLED" ? (
-        <p className="order-helper-text">Payment must be paid before fulfillment can begin.</p>
-      ) : null}
+      {showTimeline ? <FulfillmentTimeline fulfillmentMethod={fulfillmentMethod} status={currentStatus} /> : null}
       <div className="order-workflow-actions">
         {actions.map((next) => (
           <button

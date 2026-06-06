@@ -9,6 +9,7 @@ import { z } from "zod"
 import { requireAdmin } from "@/lib/admin-auth"
 import { normalizeDiscountCode } from "@/lib/discounts"
 import { slugify } from "@/lib/format"
+import { notifyOrderStatusChanged } from "@/lib/notifications"
 import { createOperationalEvent } from "@/lib/operational-events"
 import { adminOrderStatuses, assertValidOrderTransition, isFulfillmentStatus } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
@@ -33,6 +34,7 @@ const productBaseSchema = z.object({
   discountValue: z.coerce.number().min(0, "Discount value cannot be negative.").optional(),
   stock: z.coerce.number().min(0, "Stock cannot be negative."),
   lowStockThreshold: z.coerce.number().min(0, "Low stock threshold cannot be negative.").default(5),
+  taxable: z.boolean(),
   featuredHome: z.boolean(),
   featuredBanner: z.boolean(),
   featuredFresh: z.boolean(),
@@ -249,6 +251,7 @@ function readProductFormData(formData: FormData | null | undefined) {
     discountValue: formData.get("discountValue") || undefined,
     stock: formData.get("stock") ?? "",
     lowStockThreshold: formData.get("lowStockThreshold") ?? "5",
+    taxable: formData.get("taxable") === "on",
     featuredHome: formData.get("featuredHome") === "on",
     featuredBanner: formData.get("featuredBanner") === "on",
     featuredFresh: formData.get("featuredFresh") === "on",
@@ -311,6 +314,7 @@ export async function createProduct(_state: ActionState = initialActionState, fo
         ...discountFields(data),
         stock: data.stock,
         lowStockThreshold: data.lowStockThreshold,
+        taxable: data.taxable,
         featuredHome: data.featuredHome,
         featuredBanner: data.featuredBanner,
         featuredFresh: data.featuredFresh,
@@ -353,6 +357,7 @@ export async function updateProduct(productId: string, _state: ActionState = ini
         ...discountFields(data),
         stock: data.stock,
         lowStockThreshold: data.lowStockThreshold,
+        taxable: data.taxable,
         featuredHome: data.featuredHome,
         featuredBanner: data.featuredBanner,
         featuredFresh: data.featuredFresh,
@@ -724,6 +729,11 @@ export async function updateOrderStatus(orderId: string, _state: ActionState = i
       where: { id: orderId },
       include: { items: true }
     })
+
+    if (order.status === status) {
+      return { ok: true, message: "Order status is already up to date." }
+    }
+
     assertValidOrderTransition(order.status, status, order.paymentStatus)
 
     await prisma.$transaction(async (tx) => {
@@ -777,6 +787,7 @@ export async function updateOrderStatus(orderId: string, _state: ActionState = i
       message: status === "REFUNDED" ? `Refund processed for order ${order.id}` : `Order status updated to ${status.replaceAll("_", " ").toLowerCase()}`,
       metadata: { orderId: order.id, status }
     })
+    await notifyOrderStatusChanged(order.id, order.status, status)
     revalidatePath("/admin/orders")
     revalidatePath("/admin")
     return { ok: true, message: "Order status updated." }

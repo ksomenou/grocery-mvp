@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { sessionCookie, verifySessionCookie } from "@/lib/session"
 
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === "/admin/login") {
+  if (request.nextUrl.pathname === "/admin/login" || request.nextUrl.pathname === "/admin/setup") {
     return NextResponse.next()
   }
 

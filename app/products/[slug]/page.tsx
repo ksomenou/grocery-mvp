@@ -10,6 +10,30 @@ import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
 
+function customerFriendlyDescription(product: { category: { name: string }; description: string; name: string }) {
+  const name = product.name.toLowerCase()
+  const category = titleCase(product.category.name)
+
+  if (name.includes("cassava")) {
+    return "Fresh cassava root, great for fufu, gari, tapioca, and traditional African dishes. Available for local delivery or pickup."
+  }
+
+  if (name.includes("yam")) {
+    return "Fresh yams selected for hearty family meals, soups, stews, and traditional African and Caribbean cooking. Available for local delivery or pickup."
+  }
+
+  if (name.includes("goat")) {
+    return "Quality goat meat for stews, pepper soup, grilling, and traditional home cooking. Available for local delivery or pickup."
+  }
+
+  const description = product.description.trim()
+  if (description && !description.toLowerCase().includes("pick ready for delivery or pickup today")) {
+    return description
+  }
+
+  return `Fresh ${titleCase(product.name)} from our ${category} selection, ready for local delivery or pickup.`
+}
+
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
 
@@ -40,6 +64,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const isDiscounted = hasDiscount(product.priceCents, product.discountType, product.discountValue, product.discountPercent)
   const effectivePriceCents = discountedPriceCents(product.priceCents, product.discountType, product.discountValue, product.discountPercent)
   const discountBadge = formatDiscountBadge(product.priceCents, product.discountType, product.discountValue, product.discountPercent)
+  const productDescription = customerFriendlyDescription(product)
   const cartProduct = {
     id: product.id,
     imageUrl: product.imageUrl,
@@ -49,7 +74,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     discountBadge,
     saleUnit: product.saleUnit,
     slug: product.slug,
-    stock: product.stock
+    stock: product.stock,
+    taxable: product.taxable
   }
   const viewedProduct = {
     ...cartProduct,
@@ -93,7 +119,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           <div>
             <h2>Description</h2>
             <div className="detail-description-card">
-              <p className="detail-description">{product.description}</p>
+              <p className="detail-description">{productDescription}</p>
             </div>
           </div>
         </section>

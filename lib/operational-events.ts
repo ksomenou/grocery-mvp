@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto"
 
 export type OperationalEventType =
   | "payment_succeeded"
+  | "payment_failed"
   | "order_status_updated"
   | "inventory_restocked"
   | "low_stock_detected"
@@ -57,7 +58,7 @@ export async function getRecentOperationalEvents(limit = 20) {
 }
 
 export function operationalEventTone(type: string) {
-  if (type === "product_sold_out" || type === "refund_processed") {
+  if (type === "product_sold_out" || type === "refund_processed" || type === "payment_failed") {
     return "urgent"
   }
 
@@ -71,6 +72,7 @@ export function operationalEventTone(type: string) {
 export function operationalEventIcon(type: string) {
   const icons: Record<string, string> = {
     payment_succeeded: "PM",
+    payment_failed: "PF",
     order_status_updated: "OS",
     inventory_restocked: "RS",
     low_stock_detected: "LS",

@@ -19,6 +19,15 @@ const loginSchema = z.object({
   password: z.string().min(1, "Enter your password.")
 })
 
+const adminSetupSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address.").transform((value) => value.toLowerCase()),
+  password: z.string().min(8, "Password must be at least 8 characters."),
+  confirmPassword: z.string().min(8, "Confirm your password.")
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match.",
+  path: ["confirmPassword"]
+})
+
 async function createSession(user: SessionPayload) {
   const payload = encodeSessionPayload(user)
   const signature = await signSessionValue(payload)
@@ -32,31 +41,11 @@ async function createSession(user: SessionPayload) {
   })
 }
 
-function envAdminCredentials() {
-  const email = process.env.ADMIN_EMAIL?.toLowerCase().trim()
-  const password = process.env.ADMIN_PASSWORD
-
-  if (!email || !password) {
-    return null
-  }
-
-  return { email, password }
-}
-
-function isEnvAdminSession(session: SessionPayload) {
-  const admin = envAdminCredentials()
-  return Boolean(admin && session.role === "ADMIN" && session.email.toLowerCase().trim() === admin.email)
-}
-
 export async function getCurrentUser() {
   const cookieStore = await cookies()
   const session = await verifySessionCookie(cookieStore.get(sessionCookie)?.value)
   if (!session) {
     return null
-  }
-
-  if (isEnvAdminSession(session)) {
-    return session
   }
 
   const user = await prisma.user.findUnique({
@@ -87,17 +76,6 @@ export async function loginUser(formData: FormData) {
     redirect("/login?error=invalid")
   }
 
-  const admin = envAdminCredentials()
-  if (admin && parsed.data.email === admin.email && parsed.data.password === admin.password) {
-    await createSession({
-      email: admin.email,
-      id: "env-admin",
-      name: "Store Admin",
-      role: "ADMIN"
-    })
-    redirect(next.startsWith("/admin") ? next : "/admin")
-  }
-
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } })
   const valid = user ? await bcrypt.compare(parsed.data.password, user.passwordHash) : false
   if (!user || !valid) {
@@ -110,6 +88,44 @@ export async function loginUser(formData: FormData) {
   }
 
   redirect(next && !next.startsWith("/admin") ? next : "/")
+}
+
+export async function hasAdminUser() {
+  const count = await prisma.user.count({ where: { role: "ADMIN" } })
+  return count > 0
+}
+
+export async function setupFirstAdmin(formData: FormData) {
+  const parsed = adminSetupSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword")
+  })
+
+  if (!parsed.success) {
+    redirect("/admin/setup?error=invalid")
+  }
+
+  if (await hasAdminUser()) {
+    redirect("/login")
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } })
+  if (existing) {
+    redirect("/admin/setup?error=duplicate")
+  }
+
+  const user = await prisma.user.create({
+    data: {
+      email: parsed.data.email,
+      name: "Store Admin",
+      passwordHash: await bcrypt.hash(parsed.data.password, 12),
+      role: "ADMIN"
+    }
+  })
+
+  await createSession({ email: user.email, id: user.id, name: user.name, role: user.role })
+  redirect("/admin")
 }
 
 export async function registerUser(formData: FormData) {

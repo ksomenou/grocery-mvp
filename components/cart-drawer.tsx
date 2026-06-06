@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { CartItem, notifyCart, readCart, writeCart } from "@/lib/cart"
 import { deliveryStatusForDate } from "@/lib/delivery-status"
-import { formatMoney, formatQuantity, formatUnitPrice } from "@/lib/format"
+import { calculateTaxCents, formatMoney, formatQuantity, formatUnitPrice } from "@/lib/format"
 
 export function openCartDrawer() {
   if (typeof window !== "undefined") {
@@ -25,6 +25,10 @@ export function CartDrawer() {
   const [isOpen, setIsOpen] = useState(false)
   const [changedItemId, setChangedItemId] = useState<string | null>(null)
   const subtotal = useMemo(() => Math.round(items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)), [items])
+  const taxCents = useMemo(
+    () => calculateTaxCents(Math.round(items.filter((item) => item.taxable).reduce((sum, item) => sum + item.priceCents * item.quantity, 0))),
+    [items]
+  )
   const status = deliveryStatusForDate()
 
   useEffect(() => {
@@ -151,7 +155,11 @@ export function CartDrawer() {
                 <span>Subtotal</span>
                 <strong>{formatMoney(subtotal)}</strong>
               </div>
-              <small>Estimated total before taxes</small>
+              <div className="summary-line">
+                <span>Estimated tax</span>
+                <strong>{formatMoney(taxCents)}</strong>
+              </div>
+              <small>Delivery fee calculated at checkout</small>
               <p>{status.deliveryLabel} &bull; {status.pickupLabel}</p>
               <Link className="button" href="/checkout" onClick={() => setIsOpen(false)}>Checkout</Link>
               <Link className="button secondary" href="/cart" onClick={() => setIsOpen(false)}>View cart</Link>

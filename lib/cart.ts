@@ -8,6 +8,7 @@ export type CartItem = {
   imageUrl: string
   stock: number
   saleUnit: "EACH" | "LB"
+  taxable: boolean
   quantity: number
 }
 
@@ -31,6 +32,7 @@ function normalizeCart(items: CartItem[]) {
         ...item,
         saleUnit,
         stock: Number.isFinite(stock) ? Math.max(0, stock) : 0,
+        taxable: Boolean(item.taxable),
         quantity
       }
     })

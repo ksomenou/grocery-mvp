@@ -1,6 +1,7 @@
 import { AdminNav } from "@/components/admin-nav"
 import { AdminProductList } from "@/components/admin-product-list"
 import { AdminActionForm, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
+import { ProductCategoryField } from "@/components/product-category-field"
 import { createProduct } from "@/lib/actions"
 import { defaultCategoryNames } from "@/lib/default-categories"
 import { prisma } from "@/lib/prisma"
@@ -44,21 +45,7 @@ export default async function AdminProductsPage() {
               <span>Description</span>
               <textarea className="textarea" name="description" placeholder="Short product description" required />
             </label>
-            <label className="form-field">
-              <span>Product category</span>
-              <input
-                className="field"
-                list="product-category-options"
-                name="categoryName"
-                placeholder="Select or type category"
-                required
-              />
-              <datalist id="product-category-options">
-                {categoryOptions.map((categoryName) => (
-                  <option key={categoryName} value={categoryName} />
-                ))}
-              </datalist>
-            </label>
+            <ProductCategoryField categories={categoryOptions} />
             <div className="form-row">
               <label className="form-field">
                 <span>Sold by</span>
@@ -96,6 +83,10 @@ export default async function AdminProductsPage() {
                 <input className="field" defaultValue="5" min="0" name="lowStockThreshold" required step="0.01" type="number" />
               </label>
             </div>
+            <label className="form-checkbox">
+              <input name="taxable" type="checkbox" />
+              <span>Taxable item</span>
+            </label>
             <fieldset className="feature-flags">
               <legend>Homepage features</legend>
               <label><input name="featuredHome" type="checkbox" /> Recommended</label>
@@ -107,7 +98,7 @@ export default async function AdminProductsPage() {
           </AdminActionForm>
         </section>
 
-        <AdminProductList products={products} />
+        <AdminProductList categoryOptions={categoryOptions} products={products} />
       </div>
     </main>
   )

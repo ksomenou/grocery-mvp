@@ -14,6 +14,7 @@ type ProductCardProps = {
     imageUrl: string
     stock: number
     saleUnit: "EACH" | "LB"
+    taxable?: boolean | null
     discountPercent?: number | null
     discountType?: "NONE" | "PERCENT" | "FIXED" | null
     discountValue?: number | null
@@ -39,7 +40,8 @@ export function ProductCard({ badge, product }: ProductCardProps) {
     discountBadge,
     saleUnit: product.saleUnit,
     slug: product.slug,
-    stock: product.stock
+    stock: product.stock,
+    taxable: Boolean(product.taxable)
   }
 
   return (

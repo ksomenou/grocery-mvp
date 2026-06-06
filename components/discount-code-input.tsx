@@ -17,6 +17,13 @@ export function DiscountCodeInput({ defaultValue = "" }: { defaultValue?: string
     }, 0)
   }
 
+  function changeCode(value: string) {
+    setCode(value.toUpperCase())
+    window.setTimeout(() => {
+      document.dispatchEvent(new Event("freshcart-discount-change", { bubbles: true }))
+    }, 0)
+  }
+
   return (
     <label className="form-field">
       <span>Code</span>
@@ -24,7 +31,7 @@ export function DiscountCodeInput({ defaultValue = "" }: { defaultValue?: string
         <input
           className="field"
           name="code"
-          onChange={(event) => setCode(event.target.value.toUpperCase())}
+          onChange={(event) => changeCode(event.target.value)}
           placeholder="FRESH10"
           ref={inputRef}
           required

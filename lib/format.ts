@@ -129,6 +129,12 @@ export function deliveryFeeForSubtotal(subtotalCents: number, baseFeeCents = del
   return subtotalCents >= freeDeliveryThresholdCents() ? 0 : baseFeeCents
 }
 
+export const TAX_RATE = 0.08
+
+export function calculateTaxCents(taxableSubtotalCents: number) {
+  return Math.max(0, Math.round(taxableSubtotalCents * TAX_RATE))
+}
+
 export function deliveryEstimateForCart(itemCount: number) {
   if (itemCount >= 8) {
     return "60-75 min"

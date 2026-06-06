@@ -4,6 +4,7 @@ import Image from "next/image"
 import { useMemo, useState } from "react"
 
 import { AdminActionForm, AdminDeleteForm, EmptyState, ImagePreviewInput, LowStockBadge, SubmitButton } from "@/components/admin-ui"
+import { ProductCategoryField } from "@/components/product-category-field"
 import { deleteProduct, updateInventory, updateProduct } from "@/lib/actions"
 import { discountedPriceCents, formatDiscountBadge, formatUnitPrice, titleCase } from "@/lib/format"
 
@@ -19,6 +20,7 @@ type AdminProduct = {
   stock: number
   lowStockThreshold: number
   saleUnit: "EACH" | "LB"
+  taxable: boolean
   featuredHome: boolean
   featuredBanner: boolean
   featuredFresh: boolean
@@ -48,8 +50,10 @@ function productDiscountValue(product: AdminProduct) {
 }
 
 export function AdminProductList({
+  categoryOptions,
   products
 }: {
+  categoryOptions: string[]
   products: AdminProduct[]
 }) {
   const [query, setQuery] = useState("")
@@ -158,17 +162,7 @@ export function AdminProductList({
                         <span>Description</span>
                         <textarea className="textarea" defaultValue={product.description} name="description" required />
                       </label>
-                      <label className="form-field">
-                        <span>Product category</span>
-                        <input
-                          className="field"
-                          defaultValue={product.category.name}
-                          list="product-category-options"
-                          name="categoryName"
-                          placeholder="Select or type category"
-                          required
-                        />
-                      </label>
+                      <ProductCategoryField categories={categoryOptions} defaultValue={product.category.name} />
                       <div className="form-row">
                         <label className="form-field">
                           <span>Sold by</span>
@@ -206,6 +200,10 @@ export function AdminProductList({
                           <input className="field" defaultValue={product.lowStockThreshold} min="0" name="lowStockThreshold" required step="0.01" type="number" />
                         </label>
                       </div>
+                      <label className="form-checkbox">
+                        <input defaultChecked={product.taxable} name="taxable" type="checkbox" />
+                        <span>Taxable item</span>
+                      </label>
                       <fieldset className="feature-flags">
                         <legend>Homepage features</legend>
                         <label><input defaultChecked={product.featuredHome} name="featuredHome" type="checkbox" /> Recommended</label>

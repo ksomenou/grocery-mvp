@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
 
-import { deliveryFeeForSubtotal, discountedPriceCents, formatLineItem } from "@/lib/format"
+import { calculateTaxCents, deliveryFeeForSubtotal, discountedPriceCents } from "@/lib/format"
 import { calculateDiscountCodeAmount, discountIsUsable, normalizeDiscountCode } from "@/lib/discounts"
 import { getCurrentUser } from "@/lib/auth"
 import { logError } from "@/lib/log"
@@ -141,11 +141,17 @@ export async function POST(request: Request) {
       return {
         product,
         quantity,
-        priceCents: discountedPriceCents(product.priceCents, product.discountType, product.discountValue, product.discountPercent)
+        priceCents: discountedPriceCents(product.priceCents, product.discountType, product.discountValue, product.discountPercent),
+        taxable: product.taxable
       }
     })
 
     const subtotalCents = Math.round(orderItems.reduce((sum, item) => sum + item.priceCents * item.quantity, 0))
+    const taxableSubtotalCents = Math.round(
+      orderItems
+        .filter((item) => item.taxable)
+        .reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
+    )
     const discountCode = parsed.data.discountCode ? normalizeDiscountCode(parsed.data.discountCode) : ""
     const discount = discountCode
       ? await prisma.discountCode.findUnique({
@@ -187,9 +193,14 @@ export async function POST(request: Request) {
         })
       : 0
     const discountedSubtotalCents = Math.max(0, subtotalCents - discountCents)
+    const taxableDiscountCents = discount?.scope === "PRODUCT"
+      ? orderItems.some((item) => item.taxable && item.product.id === discount.productId) ? discountCents : 0
+      : subtotalCents > 0 ? Math.round(discountCents * (taxableSubtotalCents / subtotalCents)) : 0
+    const taxableBaseCents = Math.max(0, taxableSubtotalCents - taxableDiscountCents)
+    const taxCents = calculateTaxCents(taxableBaseCents)
     const feeCents = parsed.data.fulfillmentMethod === "DELIVERY" ? deliveryFeeForSubtotal(subtotalCents) : 0
+    const totalCents = discountedSubtotalCents + taxCents + feeCents
     const deliveryWindow = scheduledWindow
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
     const currentUser = await getCurrentUser()
 
     const order = await prisma.$transaction(async (tx) => {
@@ -210,6 +221,7 @@ export async function POST(request: Request) {
           customerName: parsed.data.customerName,
           customerEmail: customer.email,
           customerPhone,
+          status: "CANCELLED",
           fulfillmentMethod: parsed.data.fulfillmentMethod,
           deliveryAddress:
             parsed.data.fulfillmentMethod === "DELIVERY"
@@ -225,14 +237,16 @@ export async function POST(request: Request) {
           subtotalCents,
           discountCode: discount?.code ?? null,
           discountCents,
+          taxCents,
           deliveryFeeCents: feeCents,
-          totalCents: discountedSubtotalCents + feeCents,
+          totalCents,
           items: {
             create: orderItems.map((item) => ({
               productId: item.product.id,
               quantity: item.quantity,
               priceCents: item.priceCents,
               saleUnit: item.product.saleUnit,
+              taxable: item.taxable,
               productName: item.product.name
             }))
           }
@@ -244,61 +258,25 @@ export async function POST(request: Request) {
       return created
     })
 
-    const session = await getStripe().checkout.sessions.create({
-      mode: "payment",
-      customer_email: parsed.data.customerEmail,
+    const paymentIntent = await getStripe().paymentIntents.create({
+      amount: totalCents,
+      currency: "usd",
+      description: `Grocery order ${order.id}`,
       metadata: { orderId: order.id },
-      line_items: [
-        ...orderItems.map((item) => ({
-          quantity: item.product.saleUnit === "EACH" ? Math.round(item.quantity) : 1,
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name:
-                item.product.saleUnit === "EACH"
-                  ? item.product.name
-                  : formatLineItem(item.product.name, item.quantity, item.priceCents, item.product.saleUnit)
-            },
-            unit_amount: item.product.saleUnit === "EACH" ? item.priceCents : Math.round(item.priceCents * item.quantity)
-          }
-        })),
-        ...(feeCents > 0
-          ? [
-              {
-                quantity: 1,
-                price_data: {
-                  currency: "usd",
-                  product_data: { name: "Local delivery" },
-                  unit_amount: feeCents
-                }
-              }
-            ]
-          : [])
-      ],
-      ...(discountCents > 0
-        ? {
-            discounts: [
-              {
-                coupon: (await getStripe().coupons.create({
-                  amount_off: discountCents,
-                  currency: "usd",
-                  duration: "once",
-                  name: discount?.code ?? "FreshCart discount"
-                })).id
-              }
-            ]
-          }
-        : {}),
-      success_url: `${appUrl}/order-confirmation?order=${order.id}&token=${order.accessToken}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/cart`
+      payment_method_types: ["card"],
+      receipt_email: parsed.data.customerEmail
     })
 
     await prisma.order.update({
       where: { id: order.id },
-      data: { stripeSessionId: session.id }
+      data: { stripePaymentIntentId: paymentIntent.id }
     })
 
-    return NextResponse.json({ url: session.url })
+    return NextResponse.json({
+      clientSecret: paymentIntent.client_secret,
+      orderId: order.id,
+      token: order.accessToken
+    })
   } catch (error) {
     if (process.env.NODE_ENV === "development") {
       console.error("[checkout]", error)

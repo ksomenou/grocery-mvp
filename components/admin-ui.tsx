@@ -56,7 +56,7 @@ export function ImagePreviewInput({
   label?: string
   uploadEndpoint?: string
 }) {
-  const [preview, setPreview] = useState(currentImage ?? "/images/placeholder.svg")
+  const [preview, setPreview] = useState(currentImage ?? "")
   const [uploadedUrl, setUploadedUrl] = useState("")
   const [uploadError, setUploadError] = useState("")
   const [uploading, setUploading] = useState(false)
@@ -78,7 +78,7 @@ export function ImagePreviewInput({
     setUploadedUrl("")
 
     if (!file) {
-      setPreview(currentImage ?? "/images/placeholder.svg")
+      setPreview(currentImage ?? "")
       return
     }
 
@@ -115,7 +115,15 @@ export function ImagePreviewInput({
   return (
     <label className="image-upload">
       <span>{label}</span>
-      <img alt="" src={preview} />
+      {preview ? (
+        <img alt="" src={preview} />
+      ) : (
+        <div className="image-upload-placeholder" aria-hidden="true">
+          <span className="image-upload-icon">↑</span>
+          <strong>Tap to upload product image</strong>
+          <small>Recommended size: 1200 x 900px</small>
+        </div>
+      )}
       <input name="imageUrl" type="hidden" value={uploadedUrl} />
       <input accept="image/*" name="image" onChange={(event) => void previewFile(event.target.files?.[0])} type="file" />
       {uploading ? <small>Uploading image...</small> : null}

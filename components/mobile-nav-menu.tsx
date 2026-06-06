@@ -3,12 +3,31 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 
-const mainLinks = [
+type MobileNavMenuProps = {
+  logoutAction: () => Promise<void>
+  userRole: "ADMIN" | "CUSTOMER" | null
+}
+
+const guestLinks = [
   { href: "/", label: "Home" },
   { href: "/products", label: "Products" },
   { href: "/login", label: "Login" },
   { href: "/register", label: "Register" },
   { href: "/cart", label: "Cart" }
+]
+
+const customerLinks = [
+  { href: "/", label: "Home" },
+  { href: "/products", label: "Products" },
+  { href: "/account", label: "Account" },
+  { href: "/account/orders", label: "Order history" },
+  { href: "/cart", label: "Cart" }
+]
+
+const adminLinks = [
+  { href: "/admin", label: "Admin Dashboard" },
+  { href: "/admin/products", label: "Products" },
+  { href: "/admin/orders", label: "Orders" }
 ]
 
 const categoryLinks = [
@@ -20,8 +39,9 @@ const categoryLinks = [
   { href: `/products?category=${encodeURIComponent("Caribbean Foods")}`, label: "Caribbean Foods" }
 ]
 
-export function MobileNavMenu() {
+export function MobileNavMenu({ logoutAction, userRole }: MobileNavMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const mainLinks = userRole === "ADMIN" ? adminLinks : userRole === "CUSTOMER" ? customerLinks : guestLinks
 
   useEffect(() => {
     document.body.classList.toggle("mobile-menu-open", isOpen)
@@ -74,6 +94,11 @@ export function MobileNavMenu() {
                 {link.label}
               </Link>
             ))}
+            {userRole ? (
+              <form action={logoutAction}>
+                <button type="submit">Log out</button>
+              </form>
+            ) : null}
           </nav>
           <div className="mobile-menu-categories">
             <p>Quick categories</p>

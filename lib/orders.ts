@@ -89,7 +89,17 @@ export function canTransitionOrderStatus(current: string, next: FulfillmentStatu
   }
 }
 
-export async function markOrderPaidAndReduceStock(orderId: string, stripeSessionId: string) {
+type StripePaymentReference =
+  | { type: "session"; id: string }
+  | { type: "payment_intent"; id: string }
+
+function stripeReferenceMetadata(reference: StripePaymentReference): Record<string, string> {
+  return reference.type === "session"
+    ? { stripeSessionId: reference.id }
+    : { stripePaymentIntentId: reference.id }
+}
+
+async function markOrderPaidAndReduceStockWithReference(orderId: string, reference: StripePaymentReference) {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -100,8 +110,12 @@ export async function markOrderPaidAndReduceStock(orderId: string, stripeSession
       throw new Error("Order not found.")
     }
 
-    if (order.stripeSessionId && order.stripeSessionId !== stripeSessionId) {
+    if (reference.type === "session" && order.stripeSessionId && order.stripeSessionId !== reference.id) {
       throw new Error("Stripe session does not match this order.")
+    }
+
+    if (reference.type === "payment_intent" && order.stripePaymentIntentId && order.stripePaymentIntentId !== reference.id) {
+      throw new Error("Stripe payment intent does not match this order.")
     }
 
     if (order.paymentStatus === "REFUNDED" || order.status === "REFUNDED") {
@@ -116,7 +130,7 @@ export async function markOrderPaidAndReduceStock(orderId: string, stripeSession
       },
       data: {
         paymentStatus: PaymentStatus.PAID,
-        stripeSessionId,
+        ...(reference.type === "session" ? { stripeSessionId: reference.id } : { stripePaymentIntentId: reference.id }),
         stockReduced: true,
         paidAt: new Date()
       }
@@ -127,7 +141,7 @@ export async function markOrderPaidAndReduceStock(orderId: string, stripeSession
         where: { id: order.id },
         data: {
           paymentStatus: PaymentStatus.PAID,
-          stripeSessionId,
+          ...(reference.type === "session" ? { stripeSessionId: reference.id } : { stripePaymentIntentId: reference.id }),
           paidAt: order.paidAt ?? new Date()
         }
       })
@@ -202,10 +216,10 @@ export async function markOrderPaidAndReduceStock(orderId: string, stripeSession
     await createOperationalEvent({
       type: "payment_succeeded",
       message: `Payment confirmed for order ${order.id}`,
-      metadata: { orderId, stripeSessionId }
+      metadata: { orderId, ...stripeReferenceMetadata(reference) }
     })
 
-    logInfo("Stripe payment finalized and inventory reduced.", { orderId, stripeSessionId })
+    logInfo("Stripe payment finalized and inventory reduced.", { orderId, ...stripeReferenceMetadata(reference) })
 
     return { finalizedNow: true, order }
   })
@@ -215,6 +229,14 @@ export async function markOrderPaidAndReduceStock(orderId: string, stripeSession
   }
 
   return result.order
+}
+
+export async function markOrderPaidAndReduceStock(orderId: string, stripeSessionId: string) {
+  return markOrderPaidAndReduceStockWithReference(orderId, { type: "session", id: stripeSessionId })
+}
+
+export async function markOrderPaidAndReduceStockByPaymentIntent(orderId: string, stripePaymentIntentId: string) {
+  return markOrderPaidAndReduceStockWithReference(orderId, { type: "payment_intent", id: stripePaymentIntentId })
 }
 
 export async function markOrderPaymentFailedBySession(stripeSessionId: string) {
@@ -243,9 +265,41 @@ export async function markOrderPaymentFailedBySession(stripeSessionId: string) {
     WHERE "id" = ${order.id}
   `
   await createOperationalEvent({
-    type: "refund_processed",
-    message: `Refund processed for order ${order.id}`,
+    type: "payment_failed",
+    message: `Payment failed for order ${order.id}`,
     metadata: { orderId: order.id, stripeSessionId }
+  })
+}
+
+export async function markOrderPaymentFailedByPaymentIntent(stripePaymentIntentId: string) {
+  const order = await prisma.order.findFirst({
+    where: {
+      stripePaymentIntentId,
+      paymentStatus: PaymentStatus.PENDING
+    }
+  })
+
+  if (!order) {
+    return
+  }
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      paymentStatus: PaymentStatus.FAILED
+    }
+  })
+  await prisma.$executeRaw`
+    UPDATE "Order"
+    SET
+      "status" = 'CANCELLED'::"OrderStatus",
+      "updatedAt" = NOW()
+    WHERE "id" = ${order.id}
+  `
+  await createOperationalEvent({
+    type: "payment_failed",
+    message: `Payment failed for order ${order.id}`,
+    metadata: { orderId: order.id, stripePaymentIntentId }
   })
 }
 
@@ -293,5 +347,52 @@ export async function markOrderRefundedBySession(stripeSessionId: string) {
     type: "refund_processed",
     message: `Refund processed for order ${order.id}`,
     metadata: { orderId: order.id, stripeSessionId }
+  })
+}
+
+export async function markOrderRefundedByPaymentIntent(stripePaymentIntentId: string) {
+  const order = await prisma.order.findFirst({
+    where: {
+      stripePaymentIntentId,
+      paymentStatus: PaymentStatus.PAID
+    },
+    include: { items: true }
+  })
+
+  if (!order) {
+    return
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (order.stockReduced) {
+      const releaseClaim = await tx.order.updateMany({
+        where: { id: order.id, stockReduced: true },
+        data: { stockReduced: false }
+      })
+
+      if (releaseClaim.count > 0) {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } }
+          })
+        }
+      }
+    }
+
+    await tx.$executeRaw`
+      UPDATE "Order"
+      SET
+        "paymentStatus" = 'REFUNDED'::"PaymentStatus",
+        "status" = 'REFUNDED'::"OrderStatus",
+        "updatedAt" = NOW()
+      WHERE "id" = ${order.id}
+    `
+  })
+
+  await createOperationalEvent({
+    type: "refund_processed",
+    message: `Refund processed for order ${order.id}`,
+    metadata: { orderId: order.id, stripePaymentIntentId }
   })
 }

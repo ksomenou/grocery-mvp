@@ -31,7 +31,10 @@ function heroDescription(product: HeroProduct) {
 
 type HeroImageFit = "cover" | "contain" | "wide"
 
-const lcpHeroImageSrc = "/uploads/1780067938968-screenshot-2026-05-26-111618.png"
+const lcpHeroImageSrcs = new Set([
+  "/uploads/1780067938968-screenshot-2026-05-26-111618.png",
+  "/uploads/1779808012256-screenshot-2026-05-26-104430.png"
+])
 
 function heroImageFit(product: HeroProduct): HeroImageFit {
   const value = `${product.name} ${product.category.name} ${product.imageUrl}`.toLowerCase()
@@ -114,7 +117,7 @@ export function HomeHeroCarousel({ activeProductCount, products }: { activeProdu
       <div className="home-hero-window">
         <div className="home-hero-track" style={{ transform: `translateX(-${active * 100}%)` }}>
           {products.map((product, index) => {
-            const isPriorityImage = index === 0 || index === active || product.imageUrl === lcpHeroImageSrc
+            const isPriorityImage = index === 0 || index === active || lcpHeroImageSrcs.has(product.imageUrl)
             const imageFit = imageFits[product.id] ?? heroImageFit(product)
 
             return (

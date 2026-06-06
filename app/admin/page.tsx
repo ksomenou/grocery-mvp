@@ -2,11 +2,11 @@ import Link from "next/link"
 
 import { AdminNav } from "@/components/admin-nav"
 import { AdminNewOrderNotifier } from "@/components/admin-new-order-notifier"
-import { OrderWorkflowActions } from "@/components/admin-order-workflow"
-import { formatLineItem, formatMoney, formatQuantity, titleCase } from "@/lib/format"
+import { formatMoney, formatQuantity, titleCase } from "@/lib/format"
 import { getRecentOperationalEvents, operationalEventIcon, operationalEventTone } from "@/lib/operational-events"
 import { orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
+import type { OrderStatus } from "@prisma/client"
 
 export const dynamic = "force-dynamic"
 
@@ -22,6 +22,16 @@ type BestSellerRow = {
 type RevenueRow = {
   total: number | null
 }
+
+const fulfillmentOverviewStatuses = [
+  "RECEIVED",
+  "CONFIRMED",
+  "PREPARING",
+  "READY_FOR_PICKUP",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED",
+  "CANCELLED"
+] satisfies OrderStatus[]
 
 function metricTone(value: "healthy" | "low" | "urgent") {
   return `metric-card ${value}`
@@ -75,8 +85,14 @@ export default async function AdminPage() {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
   const yearStart = new Date(today.getFullYear(), 0, 1)
 
-  const [ordersToday, revenueTodayRows, paidOrdersToday, weekRevenueRows, ordersThisMonth, revenueThisMonthRows, ordersThisYear, revenueThisYearRows, pendingRows, activeProducts, lowStockProducts, soldOutProducts, recentOrders, paidOrders, allOrders, operationalEvents, topSellingProducts] = await Promise.all([
-    prisma.order.count({ where: { createdAt: { gte: today } } }),
+  const [ordersToday, revenueTodayRows, paidOrdersToday, weekRevenueRows, ordersThisMonth, revenueThisMonthRows, ordersThisYear, revenueThisYearRows, pendingRows, activeProducts, lowStockProducts, soldOutProducts, fulfillmentStatusRows, recentOrders, paidOrders, allOrders, operationalEvents, topSellingProducts] = await Promise.all([
+    prisma.order.count({
+      where: {
+        createdAt: { gte: today },
+        paymentStatus: "PAID",
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
+      }
+    }),
     prisma.$queryRaw<RevenueRow[]>`
       SELECT COALESCE(SUM("totalCents"), 0)::int AS total
       FROM "Order"
@@ -98,7 +114,13 @@ export default async function AdminPage() {
       AND "paymentStatus"::text = 'PAID'
       AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
     `,
-    prisma.order.count({ where: { createdAt: { gte: monthStart } } }),
+    prisma.order.count({
+      where: {
+        createdAt: { gte: monthStart },
+        paymentStatus: "PAID",
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
+      }
+    }),
     prisma.$queryRaw<RevenueRow[]>`
       SELECT COALESCE(SUM("totalCents"), 0)::int AS total
       FROM "Order"
@@ -106,7 +128,13 @@ export default async function AdminPage() {
       AND "paymentStatus"::text = 'PAID'
       AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
     `,
-    prisma.order.count({ where: { createdAt: { gte: yearStart } } }),
+    prisma.order.count({
+      where: {
+        createdAt: { gte: yearStart },
+        paymentStatus: "PAID",
+        status: { notIn: ["CANCELLED", "REFUNDED"] }
+      }
+    }),
     prisma.$queryRaw<RevenueRow[]>`
       SELECT COALESCE(SUM("totalCents"), 0)::int AS total
       FROM "Order"
@@ -118,6 +146,7 @@ export default async function AdminPage() {
       SELECT COUNT(*)::bigint AS count
       FROM "Order"
       WHERE "status"::text IN ('RECEIVED', 'CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY')
+      AND "paymentStatus"::text = 'PAID'
     `,
     prisma.product.count({ where: { isActive: true } }),
     prisma.product.findMany({
@@ -132,14 +161,31 @@ export default async function AdminPage() {
       orderBy: { updatedAt: "desc" },
       take: 5
     }),
-    prisma.order.findMany({ include: { items: true }, orderBy: { createdAt: "desc" }, take: 7 }),
+    prisma.order.groupBy({
+      by: ["status"],
+      where: {
+        paymentStatus: "PAID",
+        status: { in: fulfillmentOverviewStatuses }
+      },
+      _count: { _all: true }
+    }),
+    prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
+      include: { items: true },
+      orderBy: { createdAt: "desc" },
+      take: 7
+    }),
     prisma.order.findMany({
       where: { paymentStatus: "PAID" },
       include: { items: { include: { product: { include: { category: true } } } } },
       orderBy: { createdAt: "desc" },
       take: 60
     }),
-    prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 120 }),
+    prisma.order.findMany({
+      where: { paymentStatus: "PAID" },
+      orderBy: { createdAt: "desc" },
+      take: 120
+    }),
     getRecentOperationalEvents(20),
     prisma.$queryRaw<BestSellerRow[]>`
       SELECT
@@ -228,12 +274,17 @@ export default async function AdminPage() {
   const uniqueCustomers = new Set(validPaidOrders.map((order) => order.customerEmail)).size
   const repeatCustomers = Math.max(0, validPaidOrders.length - uniqueCustomers)
   const repeatRate = validPaidOrders.length > 0 ? Math.round((repeatCustomers / validPaidOrders.length) * 100) : 0
-  const receivedCount = allOrders.filter((order) => order.status === "RECEIVED").length
-  const confirmedCount = allOrders.filter((order) => order.status === "CONFIRMED").length
-  const preparingCount = allOrders.filter((order) => order.status === "PREPARING").length
-  const readyCount = allOrders.filter((order) => order.status === "READY_FOR_PICKUP").length
-  const deliveredCount = allOrders.filter((order) => order.status === "DELIVERED").length
-  const cancelledCount = allOrders.filter((order) => order.status === "CANCELLED").length
+  const fulfillmentCounts = new Map<OrderStatus, number>(
+    fulfillmentStatusRows.map((row) => [row.status, row._count._all])
+  )
+  const receivedCount = fulfillmentCounts.get("RECEIVED") ?? 0
+  const confirmedCount = fulfillmentCounts.get("CONFIRMED") ?? 0
+  const preparingCount = fulfillmentCounts.get("PREPARING") ?? 0
+  const readyCount = fulfillmentCounts.get("READY_FOR_PICKUP") ?? 0
+  const outForDeliveryCount = fulfillmentCounts.get("OUT_FOR_DELIVERY") ?? 0
+  const deliveredCount = fulfillmentCounts.get("DELIVERED") ?? 0
+  const cancelledCount = fulfillmentCounts.get("CANCELLED") ?? 0
+  const fulfillmentOverviewTotal = [...fulfillmentCounts.values()].reduce((sum, count) => sum + count, 0)
   const deliveredOrders = allOrders.filter((order) => order.status === "DELIVERED" && order.updatedAt > order.createdAt)
   const avgFulfillmentMinutes = deliveredOrders.length > 0
     ? Math.round(deliveredOrders.reduce((sum, order) => sum + (order.updatedAt.getTime() - order.createdAt.getTime()) / 60000, 0) / deliveredOrders.length)
@@ -279,8 +330,6 @@ export default async function AdminPage() {
           </div>
           <div className="ops-order-list">
             {recentOrders.length === 0 ? <p className="dashboard-empty">Orders will appear here as customers check out.</p> : recentOrders.map((order) => {
-              const orderItems = order.items ?? []
-
               return (
               <article className="ops-order-row" key={order.id}>
                 <div>
@@ -288,50 +337,17 @@ export default async function AdminPage() {
                     <span className="customer-avatar">{initials(order.customerName)}</span>
                     <div>
                       <strong>{order.customerName}</strong>
-                      <p>{order.createdAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} - {titleCase(order.fulfillmentMethod.toLowerCase())}</p>
+                      <p>{order.id.slice(0, 10)}... · {order.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
+                      <p>{order.createdAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · {titleCase(order.fulfillmentMethod.toLowerCase())}</p>
                       <p className="order-age">{minutesAgo(order.createdAt)}</p>
                     </div>
                   </div>
-                  <span className="mini-timeline" aria-hidden="true"><i /><i /><i /></span>
                 </div>
                 <div className="ops-order-meta">
-                  <span className="payment-icon" aria-label={`Payment ${order.paymentStatus.toLowerCase()}`}>{paymentIcon(order.paymentStatus)}</span>
-                  <span className="order-type-icon" aria-label={order.fulfillmentMethod === "DELIVERY" ? "Delivery" : "Pickup"}>{order.fulfillmentMethod === "DELIVERY" ? "D" : "P"}</span>
                   <strong>{formatMoney(order.totalCents)}</strong>
                   <span className={`status-badge payment-${order.paymentStatus.toLowerCase()}`}>{paymentStatusLabel(order.paymentStatus)}</span>
                   <span className={`status-badge status-${order.status.toLowerCase()}`}>{orderStatusLabel(order.status, order.fulfillmentMethod)}</span>
-                  <Link className="view-detail-link desktop-detail-link" href="/admin/orders">View details</Link>
-                  <details className="mobile-order-details">
-                    <summary className="view-detail-link">View details</summary>
-                    <div className="mobile-order-sheet">
-                      <div className="mobile-order-sheet-card">
-                        <strong>{order.customerName}</strong>
-                        <p>{order.customerEmail}</p>
-                        {order.customerPhone ? <p>{order.customerPhone}</p> : null}
-                        <div className="mobile-order-sheet-grid">
-                          <span>{order.fulfillmentMethod === "DELIVERY" ? "Delivery" : "Pickup"}</span>
-                          <span>{formatMoney(order.totalCents)}</span>
-                          <span>{paymentStatusLabel(order.paymentStatus)}</span>
-                          <span>{orderStatusLabel(order.status, order.fulfillmentMethod)}</span>
-                        </div>
-                        <p>{order.fulfillmentMethod === "DELIVERY" ? order.deliveryAddress : "In-store pickup"}</p>
-                        {order.deliveryInstructions ? <p>Notes: {order.deliveryInstructions}</p> : null}
-                        <div className="mobile-order-items">
-                          {orderItems.map((item) => (
-                            <p key={item.id}>{formatLineItem(item.productName, item.quantity, item.priceCents, item.saleUnit)}</p>
-                          ))}
-                        </div>
-                        <OrderWorkflowActions
-                          address={order.fulfillmentMethod === "DELIVERY" ? order.deliveryAddress : null}
-                          fulfillmentMethod={order.fulfillmentMethod}
-                          orderId={order.id}
-                          paymentStatus={order.paymentStatus}
-                          phone={order.customerPhone}
-                          status={order.status}
-                        />
-                      </div>
-                    </div>
-                  </details>
+                  <Link className="view-detail-link" href={`/admin/orders/${order.id}`}>View details</Link>
                 </div>
               </article>
               )
@@ -469,13 +485,13 @@ export default async function AdminPage() {
                 ["Confirmed", confirmedCount, "healthy"],
                 ["Preparing", preparingCount, "low"],
                 ["Ready for pickup", readyCount, "healthy"],
-                ["Out for delivery", allOrders.filter((order) => order.status === "OUT_FOR_DELIVERY").length, "healthy"],
+                ["Out for delivery", outForDeliveryCount, "healthy"],
                 ["Delivered", deliveredCount, "healthy"],
                 ["Cancelled", cancelledCount, "urgent"]
               ].map(([label, count, tone]) => (
                 <div className="fulfillment-row" key={label}>
                   <span>{label}</span>
-                  <div className="fulfillment-meter"><i className={String(tone)} style={{ width: `${Math.max(5, (Number(count) / Math.max(allOrders.length, 1)) * 100)}%` }} /></div>
+                  <div className="fulfillment-meter"><i className={String(tone)} style={{ width: `${Math.max(5, (Number(count) / Math.max(fulfillmentOverviewTotal, 1)) * 100)}%` }} /></div>
                   <strong>{count}</strong>
                 </div>
               ))}

@@ -134,6 +134,7 @@ model Product {
   stock       Float
   lowStockThreshold Float @default(5)
   saleUnit    SaleUnit    @default(EACH)
+  taxable     Boolean     @default(false)
   isActive    Boolean     @default(true)
   featuredHome Boolean    @default(false)
   featuredBanner Boolean  @default(false)
@@ -192,11 +193,13 @@ model Order {
   subtotalCents  Int
   discountCode   String?
   discountCents  Int           @default(0)
+  taxCents       Int           @default(0)
   totalCents     Int
   status         OrderStatus   @default(RECEIVED)
   paymentStatus  PaymentStatus @default(PENDING)
   stockReduced   Boolean       @default(false)
   stripeSessionId String?
+  stripePaymentIntentId String?
   paidAt          DateTime?
   deliveredAt     DateTime?
   driverName      String?
@@ -212,6 +215,7 @@ model Order {
   @@index([createdAt])
   @@index([status])
   @@index([paymentStatus])
+  @@index([stripePaymentIntentId])
   @@index([scheduledDate])
 }
 
@@ -222,6 +226,7 @@ model OrderItem {
   quantity   Float
   priceCents Int
   saleUnit   SaleUnit @default(EACH)
+  taxable    Boolean  @default(false)
   productName String
   order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product    Product @relation(fields: [productId], references: [id])

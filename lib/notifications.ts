@@ -8,7 +8,7 @@ import { storeName } from "@/lib/store"
 
 type OrderWithItems = Order & { items: OrderItem[] }
 
-function configured(value?: string) {
+function configured(value?: string | null) {
   return Boolean(value && value.trim() && !value.includes("replace_me") && !value.includes("change-me"))
 }
 
@@ -16,6 +16,18 @@ function orderLines(order: OrderWithItems) {
   return order.items
     .map((item) => `- ${formatLineItem(item.productName, item.quantity, item.priceCents, item.saleUnit)}`)
     .join("\n")
+}
+
+function statusLabel(status: string) {
+  if (status === "RECEIVED") {
+    return "Received"
+  }
+
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
 }
 
 function orderNotificationText(order: OrderWithItems) {
@@ -39,6 +51,7 @@ function orderNotificationText(order: OrderWithItems) {
     "",
     `Subtotal: ${formatMoney(order.subtotalCents)}`,
     `Discount: -${formatMoney(order.discountCents)}`,
+    `Tax: ${formatMoney(order.taxCents)}`,
     `Delivery fee: ${formatMoney(order.deliveryFeeCents)}`,
     `Total: ${formatMoney(order.totalCents)}`,
     `Payment status: ${titleCase(order.paymentStatus.toLowerCase())}`,
@@ -48,10 +61,52 @@ function orderNotificationText(order: OrderWithItems) {
     .join("\n")
 }
 
+function customerConfirmationText(order: OrderWithItems) {
+  const fulfillment = titleCase(order.fulfillmentMethod.toLowerCase())
+  const schedule = formatSchedule(order.scheduledDate, order.scheduledWindow)
+
+  return [
+    `Thanks for your order from ${storeName}.`,
+    "",
+    `Order ID: ${order.id}`,
+    `Customer: ${order.customerName}`,
+    `Fulfillment: ${fulfillment}`,
+    schedule ? `Scheduled: ${schedule}` : null,
+    order.fulfillmentMethod === "DELIVERY" ? `Delivery address: ${order.deliveryAddress}` : "Pickup: In-store pickup",
+    "",
+    "Items:",
+    orderLines(order),
+    "",
+    `Subtotal: ${formatMoney(order.subtotalCents)}`,
+    order.discountCents > 0 ? `Discount: -${formatMoney(order.discountCents)}` : null,
+    `Tax: ${formatMoney(order.taxCents)}`,
+    `Delivery fee: ${formatMoney(order.deliveryFeeCents)}`,
+    `Total: ${formatMoney(order.totalCents)}`,
+    `Payment status: ${titleCase(order.paymentStatus.toLowerCase())}`
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+async function adminNotificationEmail() {
+  const envAdminEmail = process.env.ADMIN_EMAIL?.trim()
+  if (configured(envAdminEmail)) {
+    return envAdminEmail
+  }
+
+  const adminUser = await prisma.user.findFirst({
+    where: { role: "ADMIN" },
+    orderBy: { createdAt: "asc" },
+    select: { email: true }
+  })
+
+  return adminUser?.email ?? null
+}
+
 async function sendAdminEmail(order: OrderWithItems) {
   const apiKey = process.env.RESEND_API_KEY
   const from = process.env.EMAIL_FROM
-  const to = process.env.ADMIN_EMAIL
+  const to = await adminNotificationEmail()
 
   if (!configured(apiKey) || !configured(from) || !configured(to)) {
     logInfo("Admin email notification skipped because email provider is not configured.", { orderId: order.id })
@@ -77,66 +132,113 @@ async function sendAdminEmail(order: OrderWithItems) {
   }
 }
 
-async function sendSms(to: string, body: string) {
-  const sid = process.env.TWILIO_ACCOUNT_SID?.trim()
-  const token = process.env.TWILIO_AUTH_TOKEN?.trim()
-  const from = process.env.TWILIO_PHONE_NUMBER?.trim()
+async function sendCustomerEmail(order: OrderWithItems) {
+  const apiKey = process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM
+  const to = order.customerEmail
 
-  if (!configured(sid) || !configured(token) || !configured(from)) {
-    return false
+  if (!configured(apiKey) || !configured(from) || !configured(to)) {
+    logInfo("Customer email confirmation skipped because email provider is not configured.", { orderId: order.id })
+    return
   }
 
-  const accountSid = sid as string
-  const authToken = token as string
-  const fromNumber = from as string
-
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+  const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded"
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
     },
-    body: new URLSearchParams({ Body: body, From: fromNumber, To: to })
+    body: JSON.stringify({
+      from,
+      to,
+      subject: `Your ${storeName} order confirmation`,
+      text: customerConfirmationText(order)
+    })
   })
 
   if (!response.ok) {
-    throw new Error(`Twilio SMS failed with status ${response.status}.`)
-  }
-
-  return true
-}
-
-async function sendAdminSms(order: OrderWithItems) {
-  const adminPhone = process.env.ADMIN_PHONE_NUMBER?.trim()
-  if (!configured(adminPhone)) {
-    logInfo("Admin SMS notification skipped because ADMIN_PHONE_NUMBER is not configured.", { orderId: order.id })
-    return
-  }
-
-  const fulfillment = order.fulfillmentMethod === "DELIVERY" ? "Delivery" : "Pickup"
-  const window = order.scheduledWindow ?? "No window"
-  const sent = await sendSms(
-    adminPhone as string,
-    `New order received: ${order.id} - ${order.customerName} - ${formatMoney(order.totalCents)} - ${fulfillment} - ${window}`
-  )
-
-  if (!sent) {
-    logInfo("Admin SMS notification skipped because SMS provider is not configured.", { orderId: order.id })
+    throw new Error(`Resend customer email failed with status ${response.status}.`)
   }
 }
 
-async function sendCustomerSms(order: OrderWithItems) {
-  if (!order.customerPhone) {
+function customerStatusMessage(order: OrderWithItems) {
+  const status = statusLabel(order.status).toLowerCase()
+
+  if (order.status === "CONFIRMED") {
+    return "We confirmed your grocery order and will start preparing it soon."
+  }
+
+  if (order.status === "PREPARING") {
+    return "Your groceries are being prepared now."
+  }
+
+  if (order.status === "READY_FOR_PICKUP") {
+    return "Your groceries are ready for pickup. Please bring your order ID when you arrive."
+  }
+
+  if (order.status === "OUT_FOR_DELIVERY") {
+    return "Your groceries are out for delivery and headed your way."
+  }
+
+  if (order.status === "DELIVERED") {
+    return "Your grocery order has been delivered. Thank you for shopping with us."
+  }
+
+  if (order.status === "CANCELLED") {
+    return "Your grocery order has been cancelled. Please contact support if you have questions."
+  }
+
+  return `Your order is now ${status}.`
+}
+
+function customerStatusSubject(order: OrderWithItems) {
+  if (order.status === "OUT_FOR_DELIVERY") return "Your order is now out for delivery"
+  if (order.status === "READY_FOR_PICKUP") return "Your order is ready for pickup"
+  if (order.status === "DELIVERED") return "Your order has been delivered"
+  if (order.status === "CANCELLED") return "Your order has been cancelled"
+  return `Your order is now ${statusLabel(order.status).toLowerCase()}`
+}
+
+function customerStatusText(order: OrderWithItems) {
+  const schedule = formatSchedule(order.scheduledDate, order.scheduledWindow)
+
+  return [
+    `${storeName} order update`,
+    "",
+    `Order ID: ${order.id}`,
+    `New status: ${statusLabel(order.status)}`,
+    schedule ? `Schedule: ${schedule}` : null,
+    "",
+    customerStatusMessage(order)
+  ].filter(Boolean).join("\n")
+}
+
+async function sendCustomerStatusEmail(order: OrderWithItems) {
+  const apiKey = process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM
+  const to = order.customerEmail
+
+  if (!configured(apiKey) || !configured(from) || !configured(to)) {
+    logInfo("Customer status email skipped because email provider is not configured.", { orderId: order.id })
     return
   }
 
-  const sent = await sendSms(
-    order.customerPhone,
-    `Thanks for your order from ${storeName}. Order ${order.id} received.`
-  )
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from,
+      to,
+      subject: customerStatusSubject(order),
+      text: customerStatusText(order)
+    })
+  })
 
-  if (!sent) {
-    logInfo("Customer SMS notification skipped because SMS provider is not configured.", { orderId: order.id })
+  if (!response.ok) {
+    throw new Error(`Resend customer status email failed with status ${response.status}.`)
   }
 }
 
@@ -151,15 +253,38 @@ export async function notifyPaidOrder(orderId: string) {
   }
 
   const results = await Promise.allSettled([
-    sendAdminEmail(order),
-    sendAdminSms(order),
-    sendCustomerSms(order)
+    sendCustomerEmail(order),
+    sendAdminEmail(order)
   ])
 
   results.forEach((result, index) => {
     if (result.status === "rejected") {
-      const label = ["admin email", "admin SMS", "customer SMS"][index]
+      const label = ["customer email", "admin email"][index]
       logError(`Paid order ${label} notification failed.`, result.reason, { orderId })
+    }
+  })
+}
+
+export async function notifyOrderStatusChanged(orderId: string, previousStatus: string, nextStatus: string) {
+  if (previousStatus === nextStatus) {
+    return
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true }
+  })
+
+  if (!order) {
+    return
+  }
+
+  const results = await Promise.allSettled([sendCustomerStatusEmail(order)])
+
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const label = ["customer status email"][index]
+      logError(`Order status ${label} notification failed.`, result.reason, { orderId, nextStatus, previousStatus })
     }
   })
 }

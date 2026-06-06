@@ -5,7 +5,7 @@ import Image from "next/image"
 import { useEffect, useMemo, useState } from "react"
 
 import { CartItem, notifyCart, readCart, writeCart } from "@/lib/cart"
-import { deliveryEstimateForCart, formatMoney, formatQuantity, formatUnitPrice, freeDeliveryThresholdCents } from "@/lib/format"
+import { calculateTaxCents, deliveryEstimateForCart, formatMoney, formatQuantity, formatUnitPrice, freeDeliveryThresholdCents } from "@/lib/format"
 
 export function CartView() {
   const [items, setItems] = useState<CartItem[]>([])
@@ -27,6 +27,10 @@ export function CartView() {
     [items]
   )
   const savings = Math.max(0, originalSubtotal - subtotal)
+  const taxCents = useMemo(
+    () => calculateTaxCents(Math.round(items.filter((item) => item.taxable).reduce((sum, item) => sum + item.priceCents * item.quantity, 0))),
+    [items]
+  )
   const hasFreeDelivery = subtotal >= freeDeliveryThresholdCents()
   const itemCount = items.length
   const deliveryEstimate = deliveryEstimateForCart(itemCount)
@@ -195,6 +199,10 @@ export function CartView() {
         <div className="summary-line">
           <span>Subtotal</span>
           <strong>{formatMoney(subtotal)}</strong>
+        </div>
+        <div className="summary-line">
+          <span>Estimated tax</span>
+          <strong>{formatMoney(taxCents)}</strong>
         </div>
         <p className="muted">Delivery fee is calculated at checkout for simple local delivery.</p>
         {hasInvalidItems ? (

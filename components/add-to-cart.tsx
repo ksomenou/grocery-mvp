@@ -108,7 +108,7 @@ export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity
       onTouchEnd={() => updateFromTouch(Math.min(1, product.stock))}
       type="button"
     >
-      {justAdded ? "Added" : "+ Add"}
+      {justAdded ? "Added" : "🛒 Add to cart"}
     </button>
   )
 }

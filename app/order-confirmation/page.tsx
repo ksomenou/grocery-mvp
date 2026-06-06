@@ -1,8 +1,10 @@
 import Link from "next/link"
 import type { Metadata } from "next"
 
+import { ClearCartOnConfirmation } from "@/components/clear-cart-on-confirmation"
+import { CustomerOrderStatus } from "@/components/customer-order-status"
 import { formatLineItem, formatMoney, titleCase } from "@/lib/format"
-import { markOrderPaidAndReduceStock, orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
+import { markOrderPaidAndReduceStock, markOrderPaidAndReduceStockByPaymentIntent, orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
 import { formatSchedule } from "@/lib/scheduling"
 import { getStripe } from "@/lib/stripe"
@@ -18,15 +20,15 @@ export const metadata: Metadata = {
 export default async function OrderConfirmationPage({
   searchParams
 }: {
-  searchParams: Promise<{ order?: string; session_id?: string; token?: string }>
+  searchParams: Promise<{ order?: string; payment_intent?: string; session_id?: string; token?: string }>
 }) {
-  const { order: orderId, session_id: sessionId, token } = await searchParams
-  let sessionVerified = false
+  const { order: orderId, payment_intent: paymentIntentId, session_id: sessionId, token } = await searchParams
+  let paymentVerified = false
 
   if (orderId && sessionId) {
     const session = await getStripe().checkout.sessions.retrieve(sessionId)
     if (session.payment_status === "paid" && session.metadata?.orderId === orderId) {
-      sessionVerified = true
+      paymentVerified = true
       try {
         await markOrderPaidAndReduceStock(orderId, session.id)
       } catch {
@@ -35,11 +37,25 @@ export default async function OrderConfirmationPage({
     }
   }
 
-  const order = orderId && (sessionVerified || token)
+  if (orderId && paymentIntentId) {
+    const paymentIntent = await getStripe().paymentIntents.retrieve(paymentIntentId)
+    if ((paymentIntent.status === "succeeded" || paymentIntent.status === "processing") && paymentIntent.metadata?.orderId === orderId) {
+      paymentVerified = true
+      if (paymentIntent.status === "succeeded") {
+        try {
+          await markOrderPaidAndReduceStockByPaymentIntent(orderId, paymentIntent.id)
+        } catch {
+          // Webhooks retry payment finalization; keep the confirmation page available.
+        }
+      }
+    }
+  }
+
+  const order = orderId && (paymentVerified || token)
     ? await prisma.order.findFirst({
         where: {
           id: orderId,
-          ...(sessionVerified ? {} : { accessToken: token })
+          ...(paymentVerified ? {} : { accessToken: token })
         },
         include: { items: true }
       })
@@ -47,13 +63,15 @@ export default async function OrderConfirmationPage({
 
   return (
     <main className="shell">
+      <ClearCartOnConfirmation />
       <section className="panel" style={{ marginTop: 30 }}>
         <p className="badge">Order received</p>
-        <h1 style={{ fontSize: "2.4rem", marginBottom: 8 }}>Thanks for shopping {storeName}.</h1>
+        <h1 className="order-confirmation-heading">Thanks for shopping {storeName}.</h1>
         {order ? (
           <>
             {(() => {
               const schedule = formatSchedule(order.scheduledDate, order.scheduledWindow)
+              const trackerToken = token ?? order.accessToken
 
               return (
                 <>
@@ -92,14 +110,33 @@ export default async function OrderConfirmationPage({
                   <strong>{order.deliveryInstructions}</strong>
                 </div>
               ) : null}
-              <div className="summary-line">
-                <span>Order status</span>
-                <strong>{orderStatusLabel(order.status, order.fulfillmentMethod)}</strong>
-              </div>
-              <div className="summary-line">
-                <span>Payment status</span>
-                <strong>{paymentStatusLabel(order.paymentStatus)}</strong>
-              </div>
+              {trackerToken ? (
+                <CustomerOrderStatus
+                  initial={{
+                    fulfillmentMethod: order.fulfillmentMethod,
+                    isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "REFUNDED",
+                    paymentLabel: paymentStatusLabel(order.paymentStatus),
+                    paymentStatus: order.paymentStatus,
+                    schedule,
+                    status: order.status,
+                    statusLabel: orderStatusLabel(order.status, order.fulfillmentMethod),
+                    updatedAt: order.updatedAt.toISOString()
+                  }}
+                  orderId={order.id}
+                  token={trackerToken}
+                />
+              ) : (
+                <>
+                  <div className="summary-line">
+                    <span>Order status</span>
+                    <strong>{orderStatusLabel(order.status, order.fulfillmentMethod)}</strong>
+                  </div>
+                  <div className="summary-line">
+                    <span>Payment status</span>
+                    <strong>{paymentStatusLabel(order.paymentStatus)}</strong>
+                  </div>
+                </>
+              )}
               {order.items.map((item) => (
                 <div className="summary-line" key={item.id}>
                   <span>{formatLineItem(item.productName, item.quantity, item.priceCents, item.saleUnit)}</span>
@@ -116,6 +153,10 @@ export default async function OrderConfirmationPage({
                   <strong>-{formatMoney(order.discountCents)}</strong>
                 </div>
               ) : null}
+              <div className="summary-line">
+                <span>Tax</span>
+                <strong>{formatMoney(order.taxCents)}</strong>
+              </div>
               <div className="summary-line">
                 <span>{order.fulfillmentMethod === "DELIVERY" ? "Delivery fee" : "Pickup fee"}</span>
                 <strong>{formatMoney(order.deliveryFeeCents)}</strong>

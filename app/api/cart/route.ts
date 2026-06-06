@@ -13,6 +13,7 @@ const cartItemSchema = z.object({
   imageUrl: z.string(),
   stock: z.number().finite().nonnegative(),
   saleUnit: z.enum(["EACH", "LB"]),
+  taxable: z.boolean().default(false),
   quantity: z.number().finite().positive()
 })
 

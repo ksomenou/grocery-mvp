@@ -6,12 +6,12 @@ A simple local-delivery grocery storefront built with Next.js, Prisma, PostgreSQ
 
 - Customer homepage, categories, product listing, search, product detail pages, cart, checkout, Stripe payment redirect, and order confirmation.
 - Admin dashboard for products, categories, image uploads, image previews, price changes, low-stock warnings, stock management, order review, delivery addresses, and order status updates.
-- Optional admin password protection with `ADMIN_PASSWORD`.
+- Database-backed admin login with one-time first admin setup.
 - Local delivery only with a fixed `DELIVERY_FEE_CENTS`.
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and fill in `DATABASE_URL`, Stripe keys, and `ADMIN_PASSWORD`.
+1. Copy `.env.example` to `.env` and fill in `DATABASE_URL`, Stripe keys, `AUTH_SECRET`, `ADMIN_EMAIL`, and `EMAIL_FROM`.
 2. Create the database and run migrations:
 
 ```bash
@@ -31,6 +31,8 @@ npm run dev
 ```
 
 The app runs at `http://localhost:3000` by default.
+
+5. Visit `/admin/setup` once to create the first admin user. After an admin exists, the setup page redirects to `/login`.
 
 ## Useful Commands
 

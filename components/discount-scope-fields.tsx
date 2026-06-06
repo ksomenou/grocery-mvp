@@ -44,6 +44,7 @@ export function DiscountScopeFields({
   const [amountOff, setAmountOff] = useState(String(defaultAmountOff ?? ""))
   const [activeIndex, setActiveIndex] = useState(0)
   const [minimumOrder, setMinimumOrder] = useState("")
+  const [pickerOpen, setPickerOpen] = useState(!defaultProductId)
   const listboxId = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -91,6 +92,7 @@ export function DiscountScopeFields({
   function selectProduct(product: DiscountProductOption) {
     setSelectedProductId(product.id)
     setQuery("")
+    setPickerOpen(false)
     window.setTimeout(() => document.dispatchEvent(new Event("freshcart-discount-change")), 0)
   }
 
@@ -125,6 +127,9 @@ export function DiscountScopeFields({
               if (nextScope === "ORDER") {
                 setSelectedProductId("")
                 setQuery("")
+                setPickerOpen(false)
+              } else if (!selectedProductId) {
+                setPickerOpen(true)
               }
               window.setTimeout(() => document.dispatchEvent(new Event("freshcart-discount-change")), 0)
             }}
@@ -159,55 +164,17 @@ export function DiscountScopeFields({
 
       {scope === "PRODUCT" ? (
         <div className="discount-combobox">
-          <label className="form-field">
-            <span>Product</span>
-            <input
-              aria-autocomplete="list"
-              aria-controls={listboxId}
-              aria-expanded="true"
-              autoComplete="off"
-              className="field"
-              onChange={(event) => {
-                setQuery(event.target.value)
-                setSelectedProductId("")
-                setActiveIndex(0)
-              }}
-              onKeyDown={(event) => {
-                if (filteredProducts.length === 0) {
-                  return
-                }
-
-                if (event.key === "ArrowDown") {
-                  event.preventDefault()
-                  setActiveIndex((current) => Math.min(current + 1, filteredProducts.length - 1))
-                }
-
-                if (event.key === "ArrowUp") {
-                  event.preventDefault()
-                  setActiveIndex((current) => Math.max(current - 1, 0))
-                }
-
-                if (event.key === "Enter") {
-                  event.preventDefault()
-                  selectProduct(filteredProducts[activeIndex])
-                }
-              }}
-              placeholder="Search product name or category"
-              role="combobox"
-              type="search"
-              value={selectedProduct && !query ? `${selectedProduct.name} - ${selectedProduct.categoryName}` : query}
-            />
-          </label>
           <input name="productId" type="hidden" value={selectedProductId} />
           {selectedProduct ? (
             <div className="selected-discount-product">
               <div>
+                <span className="selected-discount-product-label">Selected product</span>
                 <strong>{selectedProduct.name}</strong>
                 <span>{selectedProduct.categoryName}</span>
               </div>
               <button
                 onClick={() => {
-                  setSelectedProductId("")
+                  setPickerOpen(true)
                   setQuery("")
                 }}
                 type="button"
@@ -218,29 +185,71 @@ export function DiscountScopeFields({
           ) : (
             <p className="discount-help">Select one product below before saving this product-specific discount.</p>
           )}
-          <div className="discount-combobox-list" id={listboxId} role="listbox">
-            {filteredProducts.length === 0 ? (
-              <p>No products found.</p>
-            ) : filteredProducts.map((product) => (
-              <button
-                aria-selected={product.id === selectedProductId}
-                className={[
-                  product.id === selectedProductId ? "selected" : "",
-                  product.id !== selectedProductId && filteredProducts[activeIndex]?.id === product.id ? "active" : ""
-                ].filter(Boolean).join(" ")}
-                key={product.id}
-                onClick={() => selectProduct(product)}
-                ref={(node) => {
-                  optionRefs.current[filteredProducts.indexOf(product)] = node
-                }}
-                role="option"
-                type="button"
-              >
-                <span>{product.name}</span>
-                <small>{product.id === selectedProductId ? "Selected" : product.categoryName}</small>
-              </button>
-            ))}
-          </div>
+          {pickerOpen ? (
+            <>
+              <label className="form-field">
+                <span>Product</span>
+                <input
+                  aria-autocomplete="list"
+                  aria-controls={listboxId}
+                  aria-expanded="true"
+                  autoComplete="off"
+                  className="field"
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    setActiveIndex(0)
+                  }}
+                  onKeyDown={(event) => {
+                    if (filteredProducts.length === 0) {
+                      return
+                    }
+
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault()
+                      setActiveIndex((current) => Math.min(current + 1, filteredProducts.length - 1))
+                    }
+
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault()
+                      setActiveIndex((current) => Math.max(current - 1, 0))
+                    }
+
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      selectProduct(filteredProducts[activeIndex])
+                    }
+                  }}
+                  placeholder="Search product name or category"
+                  role="combobox"
+                  type="search"
+                  value={query}
+                />
+              </label>
+              <div className="discount-combobox-list" id={listboxId} role="listbox">
+                {filteredProducts.length === 0 ? (
+                  <p>No products found.</p>
+                ) : filteredProducts.map((product) => (
+                  <button
+                    aria-selected={product.id === selectedProductId}
+                    className={[
+                      product.id === selectedProductId ? "selected" : "",
+                      product.id !== selectedProductId && filteredProducts[activeIndex]?.id === product.id ? "active" : ""
+                    ].filter(Boolean).join(" ")}
+                    key={product.id}
+                    onClick={() => selectProduct(product)}
+                    ref={(node) => {
+                      optionRefs.current[filteredProducts.indexOf(product)] = node
+                    }}
+                    role="option"
+                    type="button"
+                  >
+                    <span>{product.name}</span>
+                    <small>{product.id === selectedProductId ? "Selected" : product.categoryName}</small>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : (
         <input name="productId" type="hidden" value="" />

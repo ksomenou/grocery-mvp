@@ -25,6 +25,7 @@ export default async function CheckoutPage() {
         initialEmail={user?.email ?? ""}
         initialName={user?.name ?? ""}
         isLoggedIn={Boolean(user && user.role === "CUSTOMER")}
+        stripePublishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
       />
     </main>
   )
