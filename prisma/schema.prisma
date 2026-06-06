@@ -150,6 +150,8 @@ model Product {
   @@index([categoryId])
   @@index([name])
   @@index([stock])
+  @@index([isActive, createdAt])
+  @@index([isActive, categoryId])
 }
 
 model DiscountCode {
@@ -215,6 +217,7 @@ model Order {
   @@index([createdAt])
   @@index([status])
   @@index([paymentStatus])
+  @@index([paymentStatus, status, createdAt])
   @@index([stripePaymentIntentId])
   @@index([scheduledDate])
 }

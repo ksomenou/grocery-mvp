@@ -8,11 +8,55 @@ import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
 
-export default async function AdminProductsPage() {
-  const [categories, products, pendingOrders, lowStockProducts] = await Promise.all([
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
-    prisma.product.findMany({ include: { category: true }, orderBy: { createdAt: "desc" } }),
-    prisma.order.count({ where: { status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } } }),
+const adminProductPageSize = 50
+
+const adminProductSelect = {
+  id: true,
+  name: true,
+  description: true,
+  priceCents: true,
+  discountPercent: true,
+  discountType: true,
+  discountValue: true,
+  imageUrl: true,
+  stock: true,
+  lowStockThreshold: true,
+  saleUnit: true,
+  taxable: true,
+  featuredHome: true,
+  featuredBanner: true,
+  featuredFresh: true,
+  featuredPopular: true,
+  isActive: true,
+  category: { select: { name: true } }
+} as const
+
+function adminProductsPageHref(page: number) {
+  return page > 1 ? `/admin/products?page=${page}` : "/admin/products"
+}
+
+export default async function AdminProductsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ page?: string }>
+}) {
+  const { page } = await searchParams
+  const currentPage = Math.max(1, Number(page) || 1)
+  const [categories, products, productCount, pendingOrders, lowStockProducts] = await Promise.all([
+    prisma.category.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
+    prisma.product.findMany({
+      orderBy: { createdAt: "desc" },
+      select: adminProductSelect,
+      skip: (currentPage - 1) * adminProductPageSize,
+      take: adminProductPageSize
+    }),
+    prisma.product.count(),
+    prisma.order.count({
+      where: {
+        paymentStatus: "PAID",
+        status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
+      }
+    }),
     prisma.product.findMany({
       where: { isActive: true, stock: { gt: 0 } },
       select: { id: true, lowStockThreshold: true, stock: true }
@@ -22,6 +66,7 @@ export default async function AdminProductsPage() {
   const categoryOptions = Array.from(
     new Set([...defaultCategoryNames, ...categories.map((category) => category.name)])
   )
+  const totalPages = Math.max(1, Math.ceil(productCount / adminProductPageSize))
 
   return (
     <main className="shell">
@@ -98,7 +143,16 @@ export default async function AdminProductsPage() {
           </AdminActionForm>
         </section>
 
-        <AdminProductList categoryOptions={categoryOptions} products={products} />
+        <div>
+          <AdminProductList categoryOptions={categoryOptions} productCount={productCount} products={products} />
+          {productCount > adminProductPageSize ? (
+            <nav className="pagination-row admin-pagination" aria-label="Admin product pagination">
+              <a className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminProductsPageHref(currentPage - 1)}>Previous</a>
+              <span>Page {currentPage} of {totalPages}</span>
+              <a className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={adminProductsPageHref(currentPage + 1)}>Next</a>
+            </nav>
+          ) : null}
+        </div>
       </div>
     </main>
   )

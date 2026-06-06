@@ -51,9 +51,11 @@ function productDiscountValue(product: AdminProduct) {
 
 export function AdminProductList({
   categoryOptions,
+  productCount,
   products
 }: {
   categoryOptions: string[]
+  productCount?: number
   products: AdminProduct[]
 }) {
   const [query, setQuery] = useState("")
@@ -87,7 +89,7 @@ export function AdminProductList({
       <div className="admin-list-toolbar">
         <div>
           <h2>Products</h2>
-          <p>{products.length} active items</p>
+          <p>{productCount ?? products.length} items</p>
         </div>
         <label className="admin-search">
           <span>Search products</span>

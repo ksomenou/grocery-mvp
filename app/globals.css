@@ -2295,6 +2295,29 @@ textarea {
   padding: 16px;
 }
 
+.pagination-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 18px 0 8px;
+}
+
+.pagination-row span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.pagination-row .disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.admin-pagination {
+  margin-bottom: 0;
+}
+
 .order-confirmation-heading {
   font-size: 2.4rem;
   margin-bottom: 8px;

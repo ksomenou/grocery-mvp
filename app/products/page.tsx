@@ -7,22 +7,60 @@ import { defaultCategoryNames } from "@/lib/default-categories"
 import { prisma } from "@/lib/prisma"
 import { storeName } from "@/lib/store"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 120
+
+const productPageSize = 24
 
 export const metadata: Metadata = {
   title: "Products",
   description: `Browse ${storeName} groceries, search products, and add fresh items to your cart.`
 }
 
+const productCardSelect = {
+  id: true,
+  name: true,
+  slug: true,
+  priceCents: true,
+  imageUrl: true,
+  stock: true,
+  saleUnit: true,
+  taxable: true,
+  discountPercent: true,
+  discountType: true,
+  discountValue: true,
+  category: { select: { name: true } }
+} as const
+
+function pageHref(params: Record<string, string | undefined>, page: number) {
+  const nextParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      nextParams.set(key, value)
+    }
+  }
+  if (page > 1) {
+    nextParams.set("page", String(page))
+  } else {
+    nextParams.delete("page")
+  }
+
+  const query = nextParams.toString()
+  return query ? `/products?${query}` : "/products"
+}
+
 export default async function ProductsPage({
   searchParams
 }: {
-  searchParams: Promise<{ category?: string; max?: string; q?: string; sort?: string; stock?: string }>
+  searchParams: Promise<{ category?: string; max?: string; page?: string; q?: string; sort?: string; stock?: string }>
 }) {
-  const { category, max, q, sort, stock } = await searchParams
+  const { category, max, page, q, sort, stock } = await searchParams
   const query = q?.trim()
   const maxPrice = max ? Number(max) : undefined
-  const categories = await prisma.category.findMany({ orderBy: { name: "asc" } })
+  const currentPage = Math.max(1, Number(page) || 1)
+  const categories = await prisma.category.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, slug: true }
+  })
   const selectedCategory = category
     ? categories.find((item) => {
       const normalizedCategory = category.toLowerCase().trim()
@@ -31,34 +69,43 @@ export default async function ProductsPage({
     : null
   const quickFilters = defaultCategoryNames.slice(0, 10)
   const suggestedSearches = defaultCategoryNames.slice(0, 6)
-  const products = await prisma.product.findMany({
-    where: {
-      isActive: true,
-      ...(selectedCategory ? { categoryId: selectedCategory.id } : {}),
-      ...(stock === "in" ? { stock: { gt: 0 } } : {}),
-      ...(Number.isFinite(maxPrice) && maxPrice && maxPrice > 0 ? { priceCents: { lte: Math.round(maxPrice * 100) } } : {}),
-      ...(query
-        ? {
-          OR: [
-            { name: { contains: query, mode: "insensitive" } },
-            { description: { contains: query, mode: "insensitive" } },
-            { category: { name: { contains: query, mode: "insensitive" } } }
-          ]
-        }
-        : {})
-    },
-    include: { category: true },
-    orderBy:
-      sort === "price-low"
-        ? { priceCents: "asc" }
-        : sort === "price-high"
-          ? { priceCents: "desc" }
-          : sort === "newest"
-            ? { createdAt: "desc" }
-            : sort === "popular"
-              ? { updatedAt: "desc" }
-              : { name: "asc" }
-  })
+  const productWhere = {
+    isActive: true,
+    ...(selectedCategory ? { categoryId: selectedCategory.id } : {}),
+    ...(stock === "in" ? { stock: { gt: 0 } } : {}),
+    ...(Number.isFinite(maxPrice) && maxPrice && maxPrice > 0 ? { priceCents: { lte: Math.round(maxPrice * 100) } } : {}),
+    ...(query
+      ? {
+        OR: [
+          { name: { contains: query, mode: "insensitive" as const } },
+          { description: { contains: query, mode: "insensitive" as const } },
+          { category: { name: { contains: query, mode: "insensitive" as const } } }
+        ]
+      }
+      : {})
+  }
+  const productOrderBy =
+    sort === "price-low"
+      ? { priceCents: "asc" as const }
+      : sort === "price-high"
+        ? { priceCents: "desc" as const }
+        : sort === "newest"
+          ? { createdAt: "desc" as const }
+          : sort === "popular"
+            ? { updatedAt: "desc" as const }
+            : { name: "asc" as const }
+  const [products, productCount] = await Promise.all([
+    prisma.product.findMany({
+      where: productWhere,
+      orderBy: productOrderBy,
+      select: productCardSelect,
+      skip: (currentPage - 1) * productPageSize,
+      take: productPageSize
+    }),
+    prisma.product.count({ where: productWhere })
+  ])
+  const totalPages = Math.max(1, Math.ceil(productCount / productPageSize))
+  const pagingParams = { category, max, q, sort, stock }
 
   return (
     <main className={`shell products-page${selectedCategory ? " has-category-filter" : ""}`}>
@@ -151,6 +198,17 @@ export default async function ProductsPage({
           </div>
         )}
       </div>
+      {productCount > productPageSize ? (
+        <nav className="pagination-row" aria-label="Product pagination">
+          <Link className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={pageHref(pagingParams, currentPage - 1)}>
+            Previous
+          </Link>
+          <span>Page {currentPage} of {totalPages}</span>
+          <Link className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={pageHref(pagingParams, currentPage + 1)}>
+            Next
+          </Link>
+        </nav>
+      ) : null}
     </main>
   )
 }

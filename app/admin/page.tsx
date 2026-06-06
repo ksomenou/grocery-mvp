@@ -151,13 +151,27 @@ export default async function AdminPage() {
     prisma.product.count({ where: { isActive: true } }),
     prisma.product.findMany({
       where: { isActive: true, stock: { gt: 0 } },
-      include: { category: true },
+      select: {
+        category: { select: { name: true } },
+        id: true,
+        lowStockThreshold: true,
+        name: true,
+        saleUnit: true,
+        stock: true
+      },
       orderBy: { stock: "asc" },
-      take: 20
+      take: 12
     }),
     prisma.product.findMany({
       where: { isActive: true, stock: { lte: 0 } },
-      include: { category: true },
+      select: {
+        category: { select: { name: true } },
+        id: true,
+        lowStockThreshold: true,
+        name: true,
+        saleUnit: true,
+        stock: true
+      },
       orderBy: { updatedAt: "desc" },
       take: 5
     }),
@@ -171,20 +185,51 @@ export default async function AdminPage() {
     }),
     prisma.order.findMany({
       where: { paymentStatus: "PAID" },
-      include: { items: true },
+      select: {
+        createdAt: true,
+        customerName: true,
+        fulfillmentMethod: true,
+        id: true,
+        paymentStatus: true,
+        status: true,
+        totalCents: true,
+        updatedAt: true
+      },
       orderBy: { createdAt: "desc" },
       take: 7
     }),
     prisma.order.findMany({
       where: { paymentStatus: "PAID" },
-      include: { items: { include: { product: { include: { category: true } } } } },
+      select: {
+        createdAt: true,
+        customerEmail: true,
+        fulfillmentMethod: true,
+        id: true,
+        status: true,
+        totalCents: true,
+        updatedAt: true,
+        items: {
+          select: {
+            quantity: true,
+            product: { select: { category: { select: { name: true } } } }
+          }
+        }
+      },
       orderBy: { createdAt: "desc" },
-      take: 60
+      take: 30
     }),
     prisma.order.findMany({
       where: { paymentStatus: "PAID" },
+      select: {
+        createdAt: true,
+        customerName: true,
+        fulfillmentMethod: true,
+        id: true,
+        status: true,
+        updatedAt: true
+      },
       orderBy: { createdAt: "desc" },
-      take: 120
+      take: 50
     }),
     getRecentOperationalEvents(20),
     prisma.$queryRaw<BestSellerRow[]>`
@@ -228,9 +273,9 @@ export default async function AdminPage() {
   const deliveryOrders = validPaidOrders.filter((order) => order.fulfillmentMethod === "DELIVERY").length
   const pickupOrders = validPaidOrders.filter((order) => order.fulfillmentMethod === "PICKUP").length
   const fulfillmentTotal = Math.max(deliveryOrders + pickupOrders, 1)
-  const deliveryQueue = allOrders.filter((order) => order.paymentStatus === "PAID" && order.fulfillmentMethod === "DELIVERY" && ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"].includes(order.status)).slice(0, 4)
-  const pickupQueue = allOrders.filter((order) => order.paymentStatus === "PAID" && order.fulfillmentMethod === "PICKUP" && ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP"].includes(order.status)).slice(0, 4)
-  const readyNowQueue = allOrders.filter((order) => order.paymentStatus === "PAID" && (order.status === "READY_FOR_PICKUP" || order.status === "OUT_FOR_DELIVERY")).slice(0, 4)
+  const deliveryQueue = allOrders.filter((order) => order.fulfillmentMethod === "DELIVERY" && ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"].includes(order.status)).slice(0, 4)
+  const pickupQueue = allOrders.filter((order) => order.fulfillmentMethod === "PICKUP" && ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP"].includes(order.status)).slice(0, 4)
+  const readyNowQueue = allOrders.filter((order) => order.status === "READY_FOR_PICKUP" || order.status === "OUT_FOR_DELIVERY").slice(0, 4)
 
   for (const order of validPaidOrders) {
     const orderDay = order.createdAt.toLocaleDateString("en-US", { weekday: "short" })

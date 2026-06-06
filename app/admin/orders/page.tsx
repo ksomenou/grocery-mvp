@@ -11,6 +11,8 @@ import type { FulfillmentMethod, OrderStatus, PaymentStatus } from "@prisma/clie
 
 export const dynamic = "force-dynamic"
 
+const adminOrderPageSize = 50
+
 function orderDate(value: Date) {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -22,12 +24,30 @@ function shortOrderId(id: string) {
   return id.length > 10 ? `${id.slice(0, 10)}...` : id
 }
 
+function adminOrdersPageHref(params: Record<string, string | undefined>, page: number) {
+  const nextParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      nextParams.set(key, value)
+    }
+  }
+  if (page > 1) {
+    nextParams.set("page", String(page))
+  } else {
+    nextParams.delete("page")
+  }
+
+  const query = nextParams.toString()
+  return query ? `/admin/orders?${query}` : "/admin/orders"
+}
+
 export default async function AdminOrdersPage({
   searchParams
 }: {
-  searchParams: Promise<{ date?: string; method?: string; payment?: string; q?: string; status?: string }>
+  searchParams: Promise<{ date?: string; method?: string; page?: string; payment?: string; q?: string; status?: string }>
 }) {
-  const { date, method, payment, q, status } = await searchParams
+  const { date, method, page, payment, q, status } = await searchParams
+  const currentPage = Math.max(1, Number(page) || 1)
   const paymentStatuses = ["PENDING", "PAID", "FAILED", "REFUNDED"] as const
   const fulfillmentMethods = ["DELIVERY", "PICKUP"] as const
   const selectedStatus: OrderStatus | undefined = isFulfillmentStatus(status)
@@ -66,19 +86,38 @@ export default async function AdminOrdersPage({
           }
         : {})
     }
-  const [orders, pendingOrders, lowStockProducts] = await Promise.all([
+  const [orders, orderCount, pendingOrders, lowStockProducts] = await Promise.all([
     prisma.order.findMany({
-    where: orderWhere,
-    include: { items: true },
-    orderBy: { createdAt: "desc" }
+      where: orderWhere,
+      orderBy: { createdAt: "desc" },
+      select: {
+        createdAt: true,
+        customerEmail: true,
+        customerName: true,
+        fulfillmentMethod: true,
+        id: true,
+        paymentStatus: true,
+        status: true,
+        totalCents: true
+      },
+      skip: (currentPage - 1) * adminOrderPageSize,
+      take: adminOrderPageSize
     }),
-    prisma.order.count({ where: { status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] } } }),
+    prisma.order.count({ where: orderWhere }),
+    prisma.order.count({
+      where: {
+        paymentStatus: "PAID",
+        status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
+      }
+    }),
     prisma.product.findMany({
       where: { isActive: true, stock: { gt: 0 } },
       select: { id: true, lowStockThreshold: true, stock: true }
     })
   ])
   const lowStockCount = lowStockProducts.filter((product) => product.stock <= product.lowStockThreshold).length
+  const totalPages = Math.max(1, Math.ceil(orderCount / adminOrderPageSize))
+  const pagingParams = { date, method, payment, q, status }
 
   return (
     <main className="shell">
@@ -165,6 +204,17 @@ export default async function AdminOrdersPage({
           })
         )}
       </section>
+      {orderCount > adminOrderPageSize ? (
+        <nav className="pagination-row admin-pagination" aria-label="Admin order pagination">
+          <Link className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage - 1)}>
+            Previous
+          </Link>
+          <span>Page {currentPage} of {totalPages}</span>
+          <Link className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage + 1)}>
+            Next
+          </Link>
+        </nav>
+      ) : null}
     </main>
   )
 }
