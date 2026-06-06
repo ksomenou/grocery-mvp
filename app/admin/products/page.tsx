@@ -5,10 +5,12 @@ import { ProductCategoryField } from "@/components/product-category-field"
 import { createProduct } from "@/lib/actions"
 import { defaultCategoryNames } from "@/lib/default-categories"
 import { prisma } from "@/lib/prisma"
+import { createQueryTimer } from "@/lib/query-timing"
 
 export const dynamic = "force-dynamic"
+export const preferredRegion = "sfo1"
 
-const adminProductPageSize = 50
+const adminProductPageSize = 25
 
 const adminProductSelect = {
   id: true,
@@ -42,27 +44,38 @@ export default async function AdminProductsPage({
 }) {
   const { page } = await searchParams
   const currentPage = Math.max(1, Number(page) || 1)
-  const [categories, products, productCount, pendingOrders, lowStockProducts] = await Promise.all([
-    prisma.category.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
-    prisma.product.findMany({
-      orderBy: { createdAt: "desc" },
-      select: adminProductSelect,
-      skip: (currentPage - 1) * adminProductPageSize,
-      take: adminProductPageSize
-    }),
-    prisma.product.count(),
-    prisma.order.count({
-      where: {
-        paymentStatus: "PAID",
-        status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
-      }
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, stock: { gt: 0 } },
-      select: { id: true, lowStockThreshold: true, stock: true }
-    })
+  const timer = createQueryTimer("admin/products")
+  const [categories, products, productCount, pendingOrders, lowStockRows] = await Promise.all([
+    timer.run("categories", () => prisma.category.findMany({ orderBy: { name: "asc" }, select: { name: true } })),
+    timer.run("products page", () =>
+      prisma.product.findMany({
+        orderBy: { createdAt: "desc" },
+        select: adminProductSelect,
+        skip: (currentPage - 1) * adminProductPageSize,
+        take: adminProductPageSize
+      })
+    ),
+    timer.run("product count", () => prisma.product.count()),
+    timer.run("pending paid orders", () =>
+      prisma.order.count({
+        where: {
+          paymentStatus: "PAID",
+          status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
+        }
+      })
+    ),
+    timer.run("low stock count", () =>
+      prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*)::bigint AS count
+        FROM "Product"
+        WHERE "isActive" = true
+        AND "stock" > 0
+        AND "stock" <= "lowStockThreshold"
+      `
+    )
   ])
-  const lowStockCount = lowStockProducts.filter((product) => product.stock <= product.lowStockThreshold).length
+  timer.flush()
+  const lowStockCount = Number(lowStockRows[0]?.count ?? 0)
   const categoryOptions = Array.from(
     new Set([...defaultCategoryNames, ...categories.map((category) => category.name)])
   )

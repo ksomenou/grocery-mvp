@@ -1,13 +1,16 @@
 import Link from "next/link"
 import type { Metadata } from "next"
+import { unstable_cache } from "next/cache"
 
 import { ProductCard } from "@/components/product-card"
 import { SearchBox } from "@/components/search-box"
 import { defaultCategoryNames } from "@/lib/default-categories"
 import { prisma } from "@/lib/prisma"
+import { createQueryTimer } from "@/lib/query-timing"
 import { storeName } from "@/lib/store"
 
 export const revalidate = 120
+export const preferredRegion = "sfo1"
 
 const productPageSize = 24
 
@@ -31,6 +34,15 @@ const productCardSelect = {
   category: { select: { name: true } }
 } as const
 
+type ProductFilters = {
+  category?: string
+  max?: string
+  page?: string
+  q?: string
+  sort?: string
+  stock?: string
+}
+
 function pageHref(params: Record<string, string | undefined>, page: number) {
   const nextParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -48,6 +60,69 @@ function pageHref(params: Record<string, string | undefined>, page: number) {
   return query ? `/products?${query}` : "/products"
 }
 
+const getProductsPageData = unstable_cache(
+  async ({ category, max, page, q, sort, stock }: ProductFilters) => {
+    const timer = createQueryTimer("products")
+    const query = q?.trim()
+    const maxPrice = max ? Number(max) : undefined
+    const currentPage = Math.max(1, Number(page) || 1)
+    const categories = await timer.run("categories", () =>
+      prisma.category.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, slug: true }
+      })
+    )
+    const selectedCategory = category
+      ? categories.find((item) => {
+        const normalizedCategory = category.toLowerCase().trim()
+        return item.slug.toLowerCase() === normalizedCategory || item.name.toLowerCase() === normalizedCategory
+      })
+      : null
+    const productWhere = {
+      isActive: true,
+      ...(selectedCategory ? { categoryId: selectedCategory.id } : {}),
+      ...(stock === "in" ? { stock: { gt: 0 } } : {}),
+      ...(Number.isFinite(maxPrice) && maxPrice && maxPrice > 0 ? { priceCents: { lte: Math.round(maxPrice * 100) } } : {}),
+      ...(query
+        ? {
+          OR: [
+            { name: { contains: query, mode: "insensitive" as const } },
+            { description: { contains: query, mode: "insensitive" as const } },
+            { category: { name: { contains: query, mode: "insensitive" as const } } }
+          ]
+        }
+        : {})
+    }
+    const productOrderBy =
+      sort === "price-low"
+        ? { priceCents: "asc" as const }
+        : sort === "price-high"
+          ? { priceCents: "desc" as const }
+          : sort === "newest"
+            ? { createdAt: "desc" as const }
+            : sort === "popular"
+              ? { updatedAt: "desc" as const }
+              : { name: "asc" as const }
+    const [products, productCount] = await Promise.all([
+      timer.run("products", () =>
+        prisma.product.findMany({
+          where: productWhere,
+          orderBy: productOrderBy,
+          select: productCardSelect,
+          skip: (currentPage - 1) * productPageSize,
+          take: productPageSize
+        })
+      ),
+      timer.run("product count", () => prisma.product.count({ where: productWhere }))
+    ])
+    timer.flush()
+
+    return { categories, currentPage, productCount, products, selectedCategory }
+  },
+  ["products-page-v4"],
+  { revalidate: 120, tags: ["products", "categories"] }
+)
+
 export default async function ProductsPage({
   searchParams
 }: {
@@ -55,55 +130,16 @@ export default async function ProductsPage({
 }) {
   const { category, max, page, q, sort, stock } = await searchParams
   const query = q?.trim()
-  const maxPrice = max ? Number(max) : undefined
-  const currentPage = Math.max(1, Number(page) || 1)
-  const categories = await prisma.category.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, slug: true }
+  const { categories, currentPage, productCount, products, selectedCategory } = await getProductsPageData({
+    category,
+    max,
+    page,
+    q,
+    sort,
+    stock
   })
-  const selectedCategory = category
-    ? categories.find((item) => {
-      const normalizedCategory = category.toLowerCase().trim()
-      return item.slug.toLowerCase() === normalizedCategory || item.name.toLowerCase() === normalizedCategory
-    })
-    : null
   const quickFilters = defaultCategoryNames.slice(0, 10)
   const suggestedSearches = defaultCategoryNames.slice(0, 6)
-  const productWhere = {
-    isActive: true,
-    ...(selectedCategory ? { categoryId: selectedCategory.id } : {}),
-    ...(stock === "in" ? { stock: { gt: 0 } } : {}),
-    ...(Number.isFinite(maxPrice) && maxPrice && maxPrice > 0 ? { priceCents: { lte: Math.round(maxPrice * 100) } } : {}),
-    ...(query
-      ? {
-        OR: [
-          { name: { contains: query, mode: "insensitive" as const } },
-          { description: { contains: query, mode: "insensitive" as const } },
-          { category: { name: { contains: query, mode: "insensitive" as const } } }
-        ]
-      }
-      : {})
-  }
-  const productOrderBy =
-    sort === "price-low"
-      ? { priceCents: "asc" as const }
-      : sort === "price-high"
-        ? { priceCents: "desc" as const }
-        : sort === "newest"
-          ? { createdAt: "desc" as const }
-          : sort === "popular"
-            ? { updatedAt: "desc" as const }
-            : { name: "asc" as const }
-  const [products, productCount] = await Promise.all([
-    prisma.product.findMany({
-      where: productWhere,
-      orderBy: productOrderBy,
-      select: productCardSelect,
-      skip: (currentPage - 1) * productPageSize,
-      take: productPageSize
-    }),
-    prisma.product.count({ where: productWhere })
-  ])
   const totalPages = Math.max(1, Math.ceil(productCount / productPageSize))
   const pagingParams = { category, max, q, sort, stock }
 

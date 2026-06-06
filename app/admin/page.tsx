@@ -6,9 +6,11 @@ import { formatMoney, formatQuantity, titleCase } from "@/lib/format"
 import { getRecentOperationalEvents, operationalEventIcon, operationalEventTone } from "@/lib/operational-events"
 import { orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
-import type { OrderStatus } from "@prisma/client"
+import { createQueryTimer } from "@/lib/query-timing"
+import type { OrderStatus, SaleUnit } from "@prisma/client"
 
 export const dynamic = "force-dynamic"
+export const preferredRegion = "sfo1"
 
 type BestSellerRow = {
   productId: string
@@ -19,8 +21,54 @@ type BestSellerRow = {
   revenueCents: number
 }
 
-type RevenueRow = {
-  total: number | null
+type OrderSummaryRow = {
+  ordersToday: number | null
+  revenueToday: number | null
+  paidOrdersToday: number | null
+  weekRevenue: number | null
+  ordersThisMonth: number | null
+  monthRevenue: number | null
+  ordersThisYear: number | null
+  yearRevenue: number | null
+  pendingOrders: number | null
+}
+
+type ProductSummaryRow = {
+  activeProducts: number | null
+  lowStockCount: number | null
+  soldOutCount: number | null
+}
+
+type InventoryWatchRow = {
+  categoryName: string | null
+  id: string
+  lowStockThreshold: number
+  name: string
+  saleUnit: SaleUnit
+  stock: number
+}
+
+type SevenDaySalesRow = {
+  day: Date
+  orders: number
+  total: number
+}
+
+type BasketAnalyticsRow = {
+  deliveryOrders: number | null
+  itemQuantity: number | null
+  paidOrderCount: number | null
+  pickupOrders: number | null
+  uniqueCustomers: number | null
+}
+
+type TopCategoryRow = {
+  categoryName: string | null
+  quantitySold: number | null
+}
+
+type FulfillmentMinutesRow = {
+  avgMinutes: number | null
 }
 
 const fulfillmentOverviewStatuses = [
@@ -85,154 +133,148 @@ export default async function AdminPage() {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
   const yearStart = new Date(today.getFullYear(), 0, 1)
 
-  const [ordersToday, revenueTodayRows, paidOrdersToday, weekRevenueRows, ordersThisMonth, revenueThisMonthRows, ordersThisYear, revenueThisYearRows, pendingRows, activeProducts, lowStockProducts, soldOutProducts, fulfillmentStatusRows, recentOrders, paidOrders, allOrders, operationalEvents, topSellingProducts] = await Promise.all([
-    prisma.order.count({
-      where: {
-        createdAt: { gte: today },
-        paymentStatus: "PAID",
-        status: { notIn: ["CANCELLED", "REFUNDED"] }
-      }
-    }),
-    prisma.$queryRaw<RevenueRow[]>`
-      SELECT COALESCE(SUM("totalCents"), 0)::int AS total
-      FROM "Order"
-      WHERE "createdAt" >= ${today}
-      AND "paymentStatus"::text = 'PAID'
-      AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
-    `,
-    prisma.order.count({
-      where: {
-        createdAt: { gte: today },
-        paymentStatus: "PAID",
-        status: { notIn: ["CANCELLED", "REFUNDED"] }
-      }
-    }),
-    prisma.$queryRaw<RevenueRow[]>`
-      SELECT COALESCE(SUM("totalCents"), 0)::int AS total
-      FROM "Order"
-      WHERE "createdAt" >= ${weekStart}
-      AND "paymentStatus"::text = 'PAID'
-      AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
-    `,
-    prisma.order.count({
-      where: {
-        createdAt: { gte: monthStart },
-        paymentStatus: "PAID",
-        status: { notIn: ["CANCELLED", "REFUNDED"] }
-      }
-    }),
-    prisma.$queryRaw<RevenueRow[]>`
-      SELECT COALESCE(SUM("totalCents"), 0)::int AS total
-      FROM "Order"
-      WHERE "createdAt" >= ${monthStart}
-      AND "paymentStatus"::text = 'PAID'
-      AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
-    `,
-    prisma.order.count({
-      where: {
-        createdAt: { gte: yearStart },
-        paymentStatus: "PAID",
-        status: { notIn: ["CANCELLED", "REFUNDED"] }
-      }
-    }),
-    prisma.$queryRaw<RevenueRow[]>`
-      SELECT COALESCE(SUM("totalCents"), 0)::int AS total
-      FROM "Order"
-      WHERE "createdAt" >= ${yearStart}
-      AND "paymentStatus"::text = 'PAID'
-      AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
-    `,
-    prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(*)::bigint AS count
-      FROM "Order"
-      WHERE "status"::text IN ('RECEIVED', 'CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY')
-      AND "paymentStatus"::text = 'PAID'
-    `,
-    prisma.product.count({ where: { isActive: true } }),
-    prisma.product.findMany({
-      where: { isActive: true, stock: { gt: 0 } },
-      select: {
-        category: { select: { name: true } },
-        id: true,
-        lowStockThreshold: true,
-        name: true,
-        saleUnit: true,
-        stock: true
-      },
-      orderBy: { stock: "asc" },
-      take: 12
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, stock: { lte: 0 } },
-      select: {
-        category: { select: { name: true } },
-        id: true,
-        lowStockThreshold: true,
-        name: true,
-        saleUnit: true,
-        stock: true
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 5
-    }),
-    prisma.order.groupBy({
-      by: ["status"],
-      where: {
-        paymentStatus: "PAID",
-        status: { in: fulfillmentOverviewStatuses }
-      },
-      _count: { _all: true }
-    }),
-    prisma.order.findMany({
-      where: { paymentStatus: "PAID" },
-      select: {
-        createdAt: true,
-        customerName: true,
-        fulfillmentMethod: true,
-        id: true,
-        paymentStatus: true,
-        status: true,
-        totalCents: true,
-        updatedAt: true
-      },
-      orderBy: { createdAt: "desc" },
-      take: 7
-    }),
-    prisma.order.findMany({
-      where: { paymentStatus: "PAID" },
-      select: {
-        createdAt: true,
-        customerEmail: true,
-        fulfillmentMethod: true,
-        id: true,
-        status: true,
-        totalCents: true,
-        updatedAt: true,
-        items: {
-          select: {
-            quantity: true,
-            product: { select: { category: { select: { name: true } } } }
-          }
-        }
-      },
-      orderBy: { createdAt: "desc" },
-      take: 30
-    }),
-    prisma.order.findMany({
-      where: { paymentStatus: "PAID" },
-      select: {
-        createdAt: true,
-        customerName: true,
-        fulfillmentMethod: true,
-        id: true,
-        status: true,
-        updatedAt: true
-      },
-      orderBy: { createdAt: "desc" },
-      take: 50
-    }),
-    getRecentOperationalEvents(20),
-    prisma.$queryRaw<BestSellerRow[]>`
+  const timer = createQueryTimer("admin/dashboard")
+  const [orderSummaryRows, productSummaryRows, lowStockRows, soldOutProducts, fulfillmentStatusRows, recentOrders, queueOrders, operationalEvents, topSellingProducts, sevenDaySalesRows, basketAnalyticsRows, topCategoryRows, fulfillmentMinutesRows] = await Promise.all([
+    timer.run("order summary aggregates", () =>
+      prisma.$queryRaw<OrderSummaryRow[]>`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= ${today}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          )::int AS "ordersToday",
+          COALESCE(SUM("totalCents") FILTER (
+            WHERE "createdAt" >= ${today}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          ), 0)::int AS "revenueToday",
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= ${today}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          )::int AS "paidOrdersToday",
+          COALESCE(SUM("totalCents") FILTER (
+            WHERE "createdAt" >= ${weekStart}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          ), 0)::int AS "weekRevenue",
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= ${monthStart}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          )::int AS "ordersThisMonth",
+          COALESCE(SUM("totalCents") FILTER (
+            WHERE "createdAt" >= ${monthStart}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          ), 0)::int AS "monthRevenue",
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= ${yearStart}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          )::int AS "ordersThisYear",
+          COALESCE(SUM("totalCents") FILTER (
+            WHERE "createdAt" >= ${yearStart}
+            AND "paymentStatus"::text = 'PAID'
+            AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+          ), 0)::int AS "yearRevenue",
+          COUNT(*) FILTER (
+            WHERE "status"::text IN ('RECEIVED', 'CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY')
+            AND "paymentStatus"::text = 'PAID'
+          )::int AS "pendingOrders"
+        FROM "Order"
+      `
+    ),
+    timer.run("product summary aggregates", () =>
+      prisma.$queryRaw<ProductSummaryRow[]>`
+        SELECT
+          COUNT(*) FILTER (WHERE "isActive" = true)::int AS "activeProducts",
+          COUNT(*) FILTER (WHERE "isActive" = true AND "stock" > 0 AND "stock" <= "lowStockThreshold")::int AS "lowStockCount",
+          COUNT(*) FILTER (WHERE "isActive" = true AND "stock" <= 0)::int AS "soldOutCount"
+        FROM "Product"
+      `
+    ),
+    timer.run("low stock watchlist", () =>
+      prisma.$queryRaw<InventoryWatchRow[]>`
+        SELECT
+          p."id",
+          p."name",
+          p."saleUnit",
+          p."stock",
+          p."lowStockThreshold",
+          c."name" AS "categoryName"
+        FROM "Product" p
+        LEFT JOIN "Category" c ON c."id" = p."categoryId"
+        WHERE p."isActive" = true
+        AND p."stock" > 0
+        AND p."stock" <= p."lowStockThreshold"
+        ORDER BY p."stock" ASC, p."updatedAt" DESC
+        LIMIT 8
+      `
+    ),
+    timer.run("sold out watchlist", () =>
+      prisma.product.findMany({
+        where: { isActive: true, stock: { lte: 0 } },
+        select: {
+          category: { select: { name: true } },
+          id: true,
+          lowStockThreshold: true,
+          name: true,
+          saleUnit: true,
+          stock: true
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 5
+      })
+    ),
+    timer.run("fulfillment counts", () =>
+      prisma.order.groupBy({
+        by: ["status"],
+        where: {
+          paymentStatus: "PAID",
+          status: { in: fulfillmentOverviewStatuses }
+        },
+        _count: { _all: true }
+      })
+    ),
+    timer.run("recent paid orders", () =>
+      prisma.order.findMany({
+        where: { paymentStatus: "PAID" },
+        select: {
+          createdAt: true,
+          customerName: true,
+          fulfillmentMethod: true,
+          id: true,
+          paymentStatus: true,
+          status: true,
+          totalCents: true,
+          updatedAt: true
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10
+      })
+    ),
+    timer.run("queue orders", () =>
+      prisma.order.findMany({
+        where: {
+          paymentStatus: "PAID",
+          status: { in: ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
+        },
+        select: {
+          createdAt: true,
+          customerName: true,
+          fulfillmentMethod: true,
+          id: true,
+          status: true,
+          updatedAt: true
+        },
+        orderBy: { createdAt: "desc" },
+        take: 12
+      })
+    ),
+    timer.run("operational events", () => getRecentOperationalEvents(20)),
+    timer.run("best selling products", () =>
+      prisma.$queryRaw<BestSellerRow[]>`
       SELECT
         oi."productId",
         oi."productName" AS "name",
@@ -249,49 +291,112 @@ export default async function AdminPage() {
       ORDER BY SUM(oi."quantity") DESC, SUM(ROUND(oi."quantity" * oi."priceCents")) DESC
       LIMIT 4
     `
+    ),
+    timer.run("seven day sales", () =>
+      prisma.$queryRaw<SevenDaySalesRow[]>`
+        SELECT
+          DATE_TRUNC('day', "createdAt")::date AS "day",
+          COUNT(*)::int AS "orders",
+          COALESCE(SUM("totalCents"), 0)::int AS "total"
+        FROM "Order"
+        WHERE "createdAt" >= ${new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6)}
+        AND "paymentStatus"::text = 'PAID'
+        AND "status"::text NOT IN ('CANCELLED', 'REFUNDED')
+        GROUP BY DATE_TRUNC('day', "createdAt")::date
+        ORDER BY "day" ASC
+      `
+    ),
+    timer.run("basket analytics", () =>
+      prisma.$queryRaw<BasketAnalyticsRow[]>`
+        SELECT
+          COUNT(DISTINCT o."id")::int AS "paidOrderCount",
+          COUNT(DISTINCT o."customerEmail")::int AS "uniqueCustomers",
+          COALESCE(SUM(oi."quantity"), 0)::float AS "itemQuantity",
+          COUNT(DISTINCT CASE WHEN o."fulfillmentMethod"::text = 'DELIVERY' THEN o."id" END)::int AS "deliveryOrders",
+          COUNT(DISTINCT CASE WHEN o."fulfillmentMethod"::text = 'PICKUP' THEN o."id" END)::int AS "pickupOrders"
+        FROM "Order" o
+        LEFT JOIN "OrderItem" oi ON oi."orderId" = o."id"
+        WHERE o."paymentStatus"::text = 'PAID'
+        AND o."status"::text NOT IN ('CANCELLED', 'REFUNDED')
+      `
+    ),
+    timer.run("top selling category", () =>
+      prisma.$queryRaw<TopCategoryRow[]>`
+        SELECT
+          c."name" AS "categoryName",
+          COALESCE(SUM(oi."quantity"), 0)::float AS "quantitySold"
+        FROM "OrderItem" oi
+        INNER JOIN "Order" o ON o."id" = oi."orderId"
+        LEFT JOIN "Product" p ON p."id" = oi."productId"
+        LEFT JOIN "Category" c ON c."id" = p."categoryId"
+        WHERE o."paymentStatus"::text = 'PAID'
+        AND o."status"::text NOT IN ('CANCELLED', 'REFUNDED')
+        GROUP BY c."name"
+        ORDER BY SUM(oi."quantity") DESC
+        LIMIT 1
+      `
+    ),
+    timer.run("average fulfillment minutes", () =>
+      prisma.$queryRaw<FulfillmentMinutesRow[]>`
+        SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt")) / 60)::float AS "avgMinutes"
+        FROM "Order"
+        WHERE "paymentStatus"::text = 'PAID'
+        AND "status"::text = 'DELIVERED'
+        AND "updatedAt" > "createdAt"
+      `
+    )
   ])
+  timer.flush()
 
-  const revenueCents = Number(revenueTodayRows[0]?.total ?? 0)
-  const weekRevenueCents = Number(weekRevenueRows[0]?.total ?? 0)
-  const monthRevenueCents = Number(revenueThisMonthRows[0]?.total ?? 0)
-  const yearRevenueCents = Number(revenueThisYearRows[0]?.total ?? 0)
-  const pendingOrders = Number(pendingRows[0]?.count ?? 0)
-  const lowStockWatchlist = lowStockProducts.filter((product) => product.stock <= product.lowStockThreshold).slice(0, 8)
+  const orderSummary = orderSummaryRows[0]
+  const productSummary = productSummaryRows[0]
+  const ordersToday = Number(orderSummary?.ordersToday ?? 0)
+  const revenueCents = Number(orderSummary?.revenueToday ?? 0)
+  const paidOrdersToday = Number(orderSummary?.paidOrdersToday ?? 0)
+  const weekRevenueCents = Number(orderSummary?.weekRevenue ?? 0)
+  const ordersThisMonth = Number(orderSummary?.ordersThisMonth ?? 0)
+  const monthRevenueCents = Number(orderSummary?.monthRevenue ?? 0)
+  const ordersThisYear = Number(orderSummary?.ordersThisYear ?? 0)
+  const yearRevenueCents = Number(orderSummary?.yearRevenue ?? 0)
+  const pendingOrders = Number(orderSummary?.pendingOrders ?? 0)
+  const activeProducts = Number(productSummary?.activeProducts ?? 0)
+  const lowStockCount = Number(productSummary?.lowStockCount ?? 0)
+  const soldOutCount = Number(productSummary?.soldOutCount ?? 0)
+  const lowStockWatchlist = lowStockRows.map((product) => ({
+    category: { name: product.categoryName ?? "Uncategorized" },
+    id: product.id,
+    lowStockThreshold: product.lowStockThreshold,
+    name: product.name,
+    saleUnit: product.saleUnit,
+    stock: product.stock
+  }))
   const averageOrderValue = paidOrdersToday > 0 ? Math.round(revenueCents / paidOrdersToday) : 0
-  const categories = new Map<string, number>()
   const sevenDaySales = Array.from({ length: 7 }, (_, index) => {
     const date = new Date()
     date.setDate(date.getDate() - (6 - index))
     date.setHours(0, 0, 0, 0)
     return { day: date.toLocaleDateString("en-US", { weekday: "short" }), orders: 0, total: 0 }
   })
-
-  const validPaidOrders = paidOrders.filter((order) => order.status !== "CANCELLED" && order.status !== "REFUNDED")
-  const avgBasketSize = validPaidOrders.length > 0
-    ? validPaidOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0) / validPaidOrders.length
-    : 0
-  const deliveryOrders = validPaidOrders.filter((order) => order.fulfillmentMethod === "DELIVERY").length
-  const pickupOrders = validPaidOrders.filter((order) => order.fulfillmentMethod === "PICKUP").length
-  const fulfillmentTotal = Math.max(deliveryOrders + pickupOrders, 1)
-  const deliveryQueue = allOrders.filter((order) => order.fulfillmentMethod === "DELIVERY" && ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"].includes(order.status)).slice(0, 4)
-  const pickupQueue = allOrders.filter((order) => order.fulfillmentMethod === "PICKUP" && ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP"].includes(order.status)).slice(0, 4)
-  const readyNowQueue = allOrders.filter((order) => order.status === "READY_FOR_PICKUP" || order.status === "OUT_FOR_DELIVERY").slice(0, 4)
-
-  for (const order of validPaidOrders) {
-    const orderDay = order.createdAt.toLocaleDateString("en-US", { weekday: "short" })
+  for (const row of sevenDaySalesRows) {
+    const orderDay = new Date(row.day).toLocaleDateString("en-US", { weekday: "short" })
     const day = sevenDaySales.find((item) => item.day === orderDay)
     if (day) {
-      day.orders += 1
-      day.total += order.totalCents
-    }
-
-    for (const item of order.items) {
-      const categoryName = item.product.category.name
-      categories.set(categoryName, (categories.get(categoryName) ?? 0) + item.quantity)
+      day.orders = Number(row.orders ?? 0)
+      day.total = Number(row.total ?? 0)
     }
   }
+  const basketAnalytics = basketAnalyticsRows[0]
+  const paidOrderCount = Number(basketAnalytics?.paidOrderCount ?? 0)
+  const uniqueCustomers = Number(basketAnalytics?.uniqueCustomers ?? 0)
+  const avgBasketSize = paidOrderCount > 0 ? Number(basketAnalytics?.itemQuantity ?? 0) / paidOrderCount : 0
+  const deliveryOrders = Number(basketAnalytics?.deliveryOrders ?? 0)
+  const pickupOrders = Number(basketAnalytics?.pickupOrders ?? 0)
+  const fulfillmentTotal = Math.max(deliveryOrders + pickupOrders, 1)
+  const deliveryQueue = queueOrders.filter((order) => order.fulfillmentMethod === "DELIVERY" && ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"].includes(order.status)).slice(0, 4)
+  const pickupQueue = queueOrders.filter((order) => order.fulfillmentMethod === "PICKUP" && ["CONFIRMED", "PREPARING", "READY_FOR_PICKUP"].includes(order.status)).slice(0, 4)
+  const readyNowQueue = queueOrders.filter((order) => order.status === "READY_FOR_PICKUP" || order.status === "OUT_FOR_DELIVERY").slice(0, 4)
 
-  const topSellingCategory = Array.from(categories.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "No sales data available"
+  const topSellingCategory = topCategoryRows[0]?.categoryName ?? "No sales data available"
   const hasSalesData = sevenDaySales.some((item) => item.total > 0 || item.orders > 0)
   const maxSales = Math.max(...sevenDaySales.map((item) => item.total), 1)
   const maxOrders = Math.max(...sevenDaySales.map((item) => item.orders), 1)
@@ -316,9 +421,8 @@ export default async function AdminPage() {
   const previousSales = sevenDaySales[5]?.total ?? 0
   const todayOrderCount = sevenDaySales[6]?.orders ?? 0
   const previousOrderCount = sevenDaySales[5]?.orders ?? 0
-  const uniqueCustomers = new Set(validPaidOrders.map((order) => order.customerEmail)).size
-  const repeatCustomers = Math.max(0, validPaidOrders.length - uniqueCustomers)
-  const repeatRate = validPaidOrders.length > 0 ? Math.round((repeatCustomers / validPaidOrders.length) * 100) : 0
+  const repeatCustomers = Math.max(0, paidOrderCount - uniqueCustomers)
+  const repeatRate = paidOrderCount > 0 ? Math.round((repeatCustomers / paidOrderCount) * 100) : 0
   const fulfillmentCounts = new Map<OrderStatus, number>(
     fulfillmentStatusRows.map((row) => [row.status, row._count._all])
   )
@@ -330,9 +434,8 @@ export default async function AdminPage() {
   const deliveredCount = fulfillmentCounts.get("DELIVERED") ?? 0
   const cancelledCount = fulfillmentCounts.get("CANCELLED") ?? 0
   const fulfillmentOverviewTotal = [...fulfillmentCounts.values()].reduce((sum, count) => sum + count, 0)
-  const deliveredOrders = allOrders.filter((order) => order.status === "DELIVERED" && order.updatedAt > order.createdAt)
-  const avgFulfillmentMinutes = deliveredOrders.length > 0
-    ? Math.round(deliveredOrders.reduce((sum, order) => sum + (order.updatedAt.getTime() - order.createdAt.getTime()) / 60000, 0) / deliveredOrders.length)
+  const avgFulfillmentMinutes = fulfillmentMinutesRows[0]?.avgMinutes
+    ? Math.round(Number(fulfillmentMinutesRows[0].avgMinutes))
     : null
   const avgFulfillmentLabel = avgFulfillmentMinutes === null
     ? "No completed orders yet"
@@ -348,7 +451,7 @@ export default async function AdminPage() {
           <h1>Operations dashboard</h1>
           <p>Monitor orders, sales, inventory risk, and daily grocery operations.</p>
         </div>
-        <AdminNav active="dashboard" lowStockCount={lowStockWatchlist.length} pendingOrderCount={pendingOrders} />
+        <AdminNav active="dashboard" lowStockCount={lowStockCount} pendingOrderCount={pendingOrders} />
       </div>
 
       <section className="admin-metrics dense">
@@ -360,7 +463,7 @@ export default async function AdminPage() {
         <article className={metricTone("healthy")}><span><b>Y</b> Year orders</span><strong>{ordersThisYear}</strong><small>Current calendar year</small></article>
         <article className={metricTone("healthy")}><span><b>$</b> Year revenue</span><strong>{formatMoney(yearRevenueCents)}</strong><small>Paid orders this year</small></article>
         <article className={metricTone(pendingOrders > 6 ? "urgent" : pendingOrders > 0 ? "low" : "healthy")}><span><b>Q</b> Pending orders</span><strong>{pendingOrders}</strong><small>Received, preparing, ready</small></article>
-        <article className={metricTone(lowStockWatchlist.length > 0 ? "low" : "healthy")}><span><b>S</b> Low stock items</span><strong>{lowStockWatchlist.length}</strong><small>{soldOutProducts.length} sold out</small></article>
+        <article className={metricTone(lowStockCount > 0 ? "low" : "healthy")}><span><b>S</b> Low stock items</span><strong>{lowStockCount}</strong><small>{soldOutCount} sold out</small></article>
         <article className={metricTone("healthy")}><span><b>A</b> Avg. order value</span><strong>{formatMoney(averageOrderValue)}</strong><small>Today</small></article>
         <article className={metricTone("healthy")}><span><b>B</b> Avg. basket size</span><strong>{avgBasketSize.toFixed(1).replace(/\.0$/, "")}</strong><small>Items per paid order</small></article>
         <article className={metricTone(activeProducts > 0 ? "healthy" : "urgent")}><span><b>P</b> Active products</span><strong>{activeProducts}</strong><small>Visible storefront items</small></article>
@@ -446,7 +549,7 @@ export default async function AdminPage() {
             )}
           </div>
           <div className="analytics-list dense-analytics">
-            <div><strong>Conversion summary</strong><p>{validPaidOrders.length} paid checkouts from {allOrders.length} recent orders</p></div>
+            <div><strong>Conversion summary</strong><p>{paidOrderCount} paid checkouts from real order data</p></div>
             <div><strong>Repeat customers</strong><p>{repeatRate}%</p></div>
             <div><strong>Avg. fulfillment time</strong><p>{avgFulfillmentLabel}</p></div>
             <div><strong>Pickup vs delivery</strong><p>{Math.round((pickupOrders / fulfillmentTotal) * 100)}% pickup / {Math.round((deliveryOrders / fulfillmentTotal) * 100)}% delivery</p></div>
@@ -512,9 +615,9 @@ export default async function AdminPage() {
               ].map(([label, queue]) => (
                 <div className="queue-card" key={String(label)}>
                   <strong>{String(label)}</strong>
-                  {(queue as typeof allOrders).length === 0 ? (
+                  {(queue as typeof queueOrders).length === 0 ? (
                     <p>No orders waiting.</p>
-                  ) : (queue as typeof allOrders).map((order) => (
+                  ) : (queue as typeof queueOrders).map((order) => (
                     <span key={order.id}>{order.customerName} · {orderStatusLabel(order.status, order.fulfillmentMethod)}</span>
                   ))}
                 </div>

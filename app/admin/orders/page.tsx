@@ -7,11 +7,13 @@ import { CopyButton } from "@/components/copy-button"
 import { formatMoney } from "@/lib/format"
 import { adminOrderStatuses, isFulfillmentStatus, orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
+import { createQueryTimer } from "@/lib/query-timing"
 import type { FulfillmentMethod, OrderStatus, PaymentStatus } from "@prisma/client"
 
 export const dynamic = "force-dynamic"
+export const preferredRegion = "sfo1"
 
-const adminOrderPageSize = 50
+const adminOrderPageSize = 25
 
 function orderDate(value: Date) {
   return new Intl.DateTimeFormat("en-US", {
@@ -86,36 +88,47 @@ export default async function AdminOrdersPage({
           }
         : {})
     }
-  const [orders, orderCount, pendingOrders, lowStockProducts] = await Promise.all([
-    prisma.order.findMany({
-      where: orderWhere,
-      orderBy: { createdAt: "desc" },
-      select: {
-        createdAt: true,
-        customerEmail: true,
-        customerName: true,
-        fulfillmentMethod: true,
-        id: true,
-        paymentStatus: true,
-        status: true,
-        totalCents: true
-      },
-      skip: (currentPage - 1) * adminOrderPageSize,
-      take: adminOrderPageSize
-    }),
-    prisma.order.count({ where: orderWhere }),
-    prisma.order.count({
-      where: {
-        paymentStatus: "PAID",
-        status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
-      }
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, stock: { gt: 0 } },
-      select: { id: true, lowStockThreshold: true, stock: true }
-    })
+  const timer = createQueryTimer("admin/orders")
+  const [orders, orderCount, pendingOrders, lowStockRows] = await Promise.all([
+    timer.run("orders page", () =>
+      prisma.order.findMany({
+        where: orderWhere,
+        orderBy: { createdAt: "desc" },
+        select: {
+          createdAt: true,
+          customerEmail: true,
+          customerName: true,
+          fulfillmentMethod: true,
+          id: true,
+          paymentStatus: true,
+          status: true,
+          totalCents: true
+        },
+        skip: (currentPage - 1) * adminOrderPageSize,
+        take: adminOrderPageSize
+      })
+    ),
+    timer.run("filtered order count", () => prisma.order.count({ where: orderWhere })),
+    timer.run("pending paid orders", () =>
+      prisma.order.count({
+        where: {
+          paymentStatus: "PAID",
+          status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
+        }
+      })
+    ),
+    timer.run("low stock count", () =>
+      prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT COUNT(*)::bigint AS count
+        FROM "Product"
+        WHERE "isActive" = true
+        AND "stock" > 0
+        AND "stock" <= "lowStockThreshold"
+      `
+    )
   ])
-  const lowStockCount = lowStockProducts.filter((product) => product.stock <= product.lowStockThreshold).length
+  timer.flush()
+  const lowStockCount = Number(lowStockRows[0]?.count ?? 0)
   const totalPages = Math.max(1, Math.ceil(orderCount / adminOrderPageSize))
   const pagingParams = { date, method, payment, q, status }
 
