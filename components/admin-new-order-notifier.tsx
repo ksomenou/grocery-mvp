@@ -15,8 +15,18 @@ export function AdminNewOrderNotifier({ initialOrderId }: { initialOrderId: stri
     let cancelled = false
 
     async function checkOrders() {
+      if (document.visibilityState !== "visible") {
+        return
+      }
+
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 5000)
+
       try {
-        const response = await fetch("/api/admin/order-notifications", { cache: "no-store" })
+        const response = await fetch("/api/admin/order-notifications", {
+          cache: "no-store",
+          signal: controller.signal
+        })
         if (!response.ok) return
         const data = (await response.json()) as NotificationPayload
         if (cancelled || !data.latestOrderId) return
@@ -36,10 +46,12 @@ export function AdminNewOrderNotifier({ initialOrderId }: { initialOrderId: stri
         lastSeenRef.current = data.latestOrderId
       } catch {
         // Polling should never interrupt the admin dashboard.
+      } finally {
+        window.clearTimeout(timeout)
       }
     }
 
-    const timer = window.setInterval(checkOrders, 30000)
+    const timer = window.setInterval(checkOrders, 60000)
     return () => {
       cancelled = true
       window.clearInterval(timer)

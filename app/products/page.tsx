@@ -103,23 +103,26 @@ const getProductsPageData = unstable_cache(
             : sort === "popular"
               ? { updatedAt: "desc" as const }
               : { name: "asc" as const }
-    const [products, productCount] = await Promise.all([
-      timer.run("products", () =>
-        prisma.product.findMany({
-          where: productWhere,
-          orderBy: productOrderBy,
-          select: productCardSelect,
-          skip: (currentPage - 1) * productPageSize,
-          take: productPageSize
-        })
-      ),
-      timer.run("product count", () => prisma.product.count({ where: productWhere }))
-    ])
+    const productRows = await timer.run("products", () =>
+      prisma.product.findMany({
+        where: productWhere,
+        orderBy: productOrderBy,
+        select: productCardSelect,
+        skip: (currentPage - 1) * productPageSize,
+        take: productPageSize + 1
+      })
+    )
     timer.flush()
 
-    return { categories, currentPage, productCount, products, selectedCategory }
+    return {
+      categories,
+      currentPage,
+      hasNextPage: productRows.length > productPageSize,
+      products: productRows.slice(0, productPageSize),
+      selectedCategory
+    }
   },
-  ["products-page-v4"],
+  ["products-page-v5"],
   { revalidate: 120, tags: ["products", "categories"] }
 )
 
@@ -130,7 +133,7 @@ export default async function ProductsPage({
 }) {
   const { category, max, page, q, sort, stock } = await searchParams
   const query = q?.trim()
-  const { categories, currentPage, productCount, products, selectedCategory } = await getProductsPageData({
+  const { categories, currentPage, hasNextPage, products, selectedCategory } = await getProductsPageData({
     category,
     max,
     page,
@@ -140,7 +143,6 @@ export default async function ProductsPage({
   })
   const quickFilters = defaultCategoryNames.slice(0, 10)
   const suggestedSearches = defaultCategoryNames.slice(0, 6)
-  const totalPages = Math.max(1, Math.ceil(productCount / productPageSize))
   const pagingParams = { category, max, q, sort, stock }
 
   return (
@@ -234,13 +236,13 @@ export default async function ProductsPage({
           </div>
         )}
       </div>
-      {productCount > productPageSize ? (
+      {currentPage > 1 || hasNextPage ? (
         <nav className="pagination-row" aria-label="Product pagination">
           <Link className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={pageHref(pagingParams, currentPage - 1)}>
             Previous
           </Link>
-          <span>Page {currentPage} of {totalPages}</span>
-          <Link className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={pageHref(pagingParams, currentPage + 1)}>
+          <span>Page {currentPage}</span>
+          <Link className={`button secondary${!hasNextPage ? " disabled" : ""}`} href={pageHref(pagingParams, currentPage + 1)}>
             Next
           </Link>
         </nav>
