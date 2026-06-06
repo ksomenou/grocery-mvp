@@ -117,7 +117,7 @@ export function HomeHeroCarousel({ activeProductCount, products }: { activeProdu
       <div className="home-hero-window">
         <div className="home-hero-track" style={{ transform: `translateX(-${active * 100}%)` }}>
           {products.map((product, index) => {
-            const isPriorityImage = index === 0 || index === active || lcpHeroImageSrcs.has(product.imageUrl)
+            const isPriorityImage = index === 0 || lcpHeroImageSrcs.has(product.imageUrl)
             const imageFit = imageFits[product.id] ?? heroImageFit(product)
 
             return (

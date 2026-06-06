@@ -1,5 +1,6 @@
 import Link from "next/link"
 import Image from "next/image"
+import { unstable_cache } from "next/cache"
 
 import { CategoryCarousel } from "@/components/category-carousel"
 import { HomeHeroCarousel } from "@/components/home-hero-carousel"
@@ -10,9 +11,34 @@ import { deliveryStatusForDate } from "@/lib/delivery-status"
 import { prisma } from "@/lib/prisma"
 import { storeName } from "@/lib/store"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 300
 
 const categoryChips = defaultCategoryNames
+
+const homepageProductSelect = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  priceCents: true,
+  imageUrl: true,
+  stock: true,
+  saleUnit: true,
+  taxable: true,
+  discountPercent: true,
+  discountType: true,
+  discountValue: true,
+  featuredHome: true,
+  featuredBanner: true,
+  featuredFresh: true,
+  featuredPopular: true,
+  category: {
+    select: {
+      name: true,
+      slug: true
+    }
+  }
+} as const
 
 const categoryIcons: Record<string, string> = {
   Fruits: "\uD83C\uDF4E",
@@ -44,61 +70,37 @@ const featuredShelves = [
   { title: "Caribbean/African essentials", subtitle: "Island staples, African favorites, pantry picks, and comfort foods.", terms: ["Caribbean Foods", "African Foods"], fallbackQuery: "Caribbean African Foods" }
 ]
 
+const getHomepageData = unstable_cache(
+  async () => {
+    const [categories, activeProductCount, products] = await Promise.all([
+      prisma.category.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, slug: true }
+      }),
+      prisma.product.count({ where: { isActive: true } }),
+      prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: [{ featuredBanner: "desc" }, { featuredPopular: "desc" }, { featuredFresh: "desc" }, { featuredHome: "desc" }, { updatedAt: "desc" }],
+        select: homepageProductSelect,
+        take: 36
+      })
+    ])
+
+    return { activeProductCount, categories, products }
+  },
+  ["homepage-products-v2"],
+  { revalidate: 300, tags: ["homepage"] }
+)
+
 export default async function HomePage() {
   const deliveryStatus = deliveryStatusForDate()
-  const [categories, activeProductCount, fallbackProducts, bannerProducts, freshFeatured, popularFeatured, weeklyDeals, homeFeatured, shelfProducts] = await Promise.all([
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
-    prisma.product.count({ where: { isActive: true } }),
-    prisma.product.findMany({
-      where: { isActive: true },
-      include: { category: true },
-      orderBy: { createdAt: "desc" },
-      take: 8
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, featuredBanner: true },
-      include: { category: true },
-      orderBy: { updatedAt: "desc" },
-      take: 4
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, stock: { gt: 0 }, featuredFresh: true },
-      include: { category: true },
-      orderBy: { updatedAt: "desc" },
-      take: 8
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, featuredPopular: true },
-      include: { category: true },
-      orderBy: { name: "asc" },
-      take: 8
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, stock: { gt: 0 } },
-      include: { category: true },
-      orderBy: { priceCents: "asc" },
-      take: 8
-    }),
-    prisma.product.findMany({
-      where: { isActive: true, featuredHome: true },
-      include: { category: true },
-      orderBy: { updatedAt: "desc" },
-      take: 8
-    }),
-    prisma.product.findMany({
-      where: {
-        isActive: true,
-        category: {
-          OR: featuredShelves.flatMap((shelf) =>
-            shelf.terms.map((term) => ({ name: { contains: term, mode: "insensitive" as const } }))
-          )
-        }
-      },
-      include: { category: true },
-      orderBy: { updatedAt: "desc" },
-      take: 48
-    })
-  ])
+  const { categories, activeProductCount, products } = await getHomepageData()
+  const fallbackProducts = products.slice(0, 8)
+  const bannerProducts = products.filter((product) => product.featuredBanner).slice(0, 4)
+  const freshFeatured = products.filter((product) => product.stock > 0 && product.featuredFresh).slice(0, 8)
+  const popularFeatured = products.filter((product) => product.featuredPopular).slice(0, 8)
+  const homeFeatured = products.filter((product) => product.featuredHome).slice(0, 8)
+  const weeklyDeals = [...products].filter((product) => product.stock > 0).sort((a, b) => a.priceCents - b.priceCents).slice(0, 8)
   const popularNearYou = popularFeatured.length > 0 ? popularFeatured : fallbackProducts
   const freshToday = freshFeatured.length > 0 ? freshFeatured : fallbackProducts.filter((product) => product.stock > 0)
   const recommended = homeFeatured.length > 0 ? homeFeatured : fallbackProducts
@@ -141,19 +143,19 @@ export default async function HomePage() {
     const category = categories.find((item) =>
       normalizedTerms.some((term) => normalizeCategory(item.name).includes(term) || term.includes(normalizeCategory(item.name)))
     )
-    const products = shelfProducts
+    const shelfItems = products
       .filter((product) =>
         normalizedTerms.some((term) => {
           const categoryName = normalizeCategory(product.category.name)
           return categoryName.includes(term) || term.includes(categoryName)
         })
       )
-      .slice(0, 8)
+      .slice(0, 6)
 
     return {
       ...shelf,
       href: category ? `/category/${category.slug}` : `/products?q=${encodeURIComponent(shelf.fallbackQuery)}`,
-      products
+      products: shelfItems
     }
   }).filter((shelf) => shelf.products.length > 0)
 
@@ -184,12 +186,12 @@ export default async function HomePage() {
             </div>
             <div className="market-card small top">
               <div className="market-card-image relative">
-                <Image alt="" fill priority sizes="110px" src={pantryPromoImage} />
+                <Image alt="" fill sizes="110px" src={pantryPromoImage} />
               </div>
             </div>
             <div className="market-card small bottom">
               <div className="market-card-image relative">
-                <Image alt="" fill priority sizes="110px" src={heroProducts[0]?.imageUrl ?? freshPromoImage} />
+                <Image alt="" fill sizes="110px" src={heroProducts[0]?.imageUrl ?? freshPromoImage} />
               </div>
             </div>
           </div>
@@ -216,7 +218,7 @@ export default async function HomePage() {
             <p>Hand-picked fruits and vegetables.</p>
           </div>
           <div className="promo-image relative" aria-hidden="true">
-            <Image alt="" fill priority sizes="120px" src={freshPromoImage} />
+            <Image alt="" fill sizes="120px" src={freshPromoImage} />
           </div>
         </Link>
         <Link className="promo-card yellow" href="/products?q=snacks">
