@@ -3598,6 +3598,12 @@ textarea {
   font-weight: 850;
 }
 
+.admin-product-server-filters {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
 .admin-list.single {
   max-height: none;
   overflow: visible;

@@ -1,5 +1,6 @@
 import { AdminNav } from "@/components/admin-nav"
-import { AdminActionForm, AdminDeleteForm, EmptyState, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
+import { EmptyState } from "@/components/admin-static-ui"
+import { AdminActionForm, AdminDeleteForm, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
 import { createCategory, deleteCategory, updateCategory } from "@/lib/actions"
 import { prisma } from "@/lib/prisma"
 import Image from "next/image"

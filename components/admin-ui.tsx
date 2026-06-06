@@ -1,11 +1,10 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useState } from "react"
+import { useActionState, useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useFormStatus } from "react-dom"
 
 import type { ActionState } from "@/lib/actions"
-import { formatQuantity } from "@/lib/format"
 
 const emptyState: ActionState = { ok: false, message: "" }
 
@@ -189,40 +188,4 @@ export function AdminDeleteForm({
       </form>
     </>
   )
-}
-
-export function EmptyState({
-  title,
-  message
-}: {
-  title: string
-  message: string
-}) {
-  return (
-    <div className="empty-state">
-      <div className="empty-icon" aria-hidden="true">+</div>
-      <h3>{title}</h3>
-      <p>{message}</p>
-    </div>
-  )
-}
-
-export function LowStockBadge({ lowStockThreshold = 5, saleUnit, stock }: { lowStockThreshold?: number; saleUnit: "EACH" | "LB"; stock: number }) {
-  const label = useMemo(() => {
-    if (stock <= 0) {
-      return "Out of stock"
-    }
-
-    if (stock <= lowStockThreshold) {
-      return "Low stock"
-    }
-
-    return null
-  }, [lowStockThreshold, stock])
-
-  if (!label) {
-    return <span className="stock">{formatQuantity(stock, saleUnit)} in stock</span>
-  }
-
-  return <span className={`stock-warning ${stock <= 0 ? "empty" : ""}`}>{label}: {formatQuantity(Math.max(stock, 0), saleUnit)}</span>
 }

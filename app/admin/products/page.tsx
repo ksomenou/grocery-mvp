@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache"
+import type { Prisma } from "@prisma/client"
 
 import { AdminNav } from "@/components/admin-nav"
 import { AdminProductList } from "@/components/admin-product-list"
@@ -68,17 +69,56 @@ const getAdminProductSummary = unstable_cache(
   { revalidate: 60, tags: ["admin-products-summary"] }
 )
 
-function adminProductsPageHref(page: number) {
-  return page > 1 ? `/admin/products?page=${page}` : "/admin/products"
+function adminProductsPageHref(page: number, filters: { category: string; q: string; stock: string }) {
+  const params = new URLSearchParams()
+
+  if (page > 1) {
+    params.set("page", String(page))
+  }
+
+  if (filters.q) {
+    params.set("q", filters.q)
+  }
+
+  if (filters.category) {
+    params.set("category", filters.category)
+  }
+
+  if (filters.stock !== "all") {
+    params.set("stock", filters.stock)
+  }
+
+  const query = params.toString()
+  return query ? `/admin/products?${query}` : "/admin/products"
 }
 
 export default async function AdminProductsPage({
   searchParams
 }: {
-  searchParams: Promise<{ page?: string }>
+  searchParams: Promise<{ category?: string; page?: string; q?: string; stock?: string }>
 }) {
-  const { page } = await searchParams
+  const { category, page, q, stock } = await searchParams
   const currentPage = Math.max(1, Number(page) || 1)
+  const activeQuery = typeof q === "string" ? q.trim() : ""
+  const activeCategory = typeof category === "string" ? category.trim() : ""
+  const activeStockFilter = ["active", "hidden", "low", "out"].includes(stock ?? "") ? stock ?? "all" : "all"
+  const productWhere: Prisma.ProductWhereInput = {
+    AND: [
+      activeQuery
+        ? {
+            OR: [
+              { name: { contains: activeQuery, mode: "insensitive" } },
+              { category: { name: { contains: activeQuery, mode: "insensitive" } } }
+            ]
+          }
+        : {},
+      activeCategory ? { category: { name: activeCategory } } : {},
+      activeStockFilter === "active" ? { isActive: true } : {},
+      activeStockFilter === "hidden" ? { isActive: false } : {},
+      activeStockFilter === "low" ? { isActive: true, stock: { gt: 0, lte: 5 } } : {},
+      activeStockFilter === "out" ? { stock: { lte: 0 } } : {}
+    ]
+  }
   const timer = createQueryTimer("admin/products")
   const [categories, products, summary] = await Promise.all([
     timer.run("categories", () => prisma.category.findMany({ orderBy: { name: "asc" }, select: { name: true } })),
@@ -86,6 +126,7 @@ export default async function AdminProductsPage({
       prisma.product.findMany({
         orderBy: { createdAt: "desc" },
         select: adminProductSelect,
+        where: productWhere,
         skip: (currentPage - 1) * adminProductPageSize,
         take: adminProductPageSize + 1
       })
@@ -176,12 +217,18 @@ export default async function AdminProductsPage({
         </section>
 
         <div>
-          <AdminProductList categoryOptions={categoryOptions} products={visibleProducts} />
+          <AdminProductList
+            activeCategory={activeCategory}
+            activeQuery={activeQuery}
+            activeStockFilter={activeStockFilter}
+            categoryOptions={categoryOptions}
+            products={visibleProducts}
+          />
           {currentPage > 1 || hasNextPage ? (
             <nav className="pagination-row admin-pagination" aria-label="Admin product pagination">
-              <a className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminProductsPageHref(currentPage - 1)}>Previous</a>
+              <a className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminProductsPageHref(currentPage - 1, { category: activeCategory, q: activeQuery, stock: activeStockFilter })}>Previous</a>
               <span>Page {currentPage}</span>
-              <a className={`button secondary${!hasNextPage ? " disabled" : ""}`} href={adminProductsPageHref(currentPage + 1)}>Next</a>
+              <a className={`button secondary${!hasNextPage ? " disabled" : ""}`} href={adminProductsPageHref(currentPage + 1, { category: activeCategory, q: activeQuery, stock: activeStockFilter })}>Next</a>
             </nav>
           ) : null}
         </div>

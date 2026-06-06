@@ -2,7 +2,7 @@ import Image from "next/image"
 import Link from "next/link"
 
 import { AdminNav } from "@/components/admin-nav"
-import { EmptyState, LowStockBadge } from "@/components/admin-ui"
+import { EmptyState, LowStockBadge } from "@/components/admin-static-ui"
 import { InventoryUpdateForm } from "@/components/inventory-update-form"
 import { formatQuantity, titleCase } from "@/lib/format"
 import { prisma } from "@/lib/prisma"

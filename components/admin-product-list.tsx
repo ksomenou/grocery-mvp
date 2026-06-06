@@ -1,9 +1,7 @@
-"use client"
-
 import Image from "next/image"
-import { useMemo, useState } from "react"
 
-import { AdminActionForm, AdminDeleteForm, EmptyState, ImagePreviewInput, LowStockBadge, SubmitButton } from "@/components/admin-ui"
+import { EmptyState, LowStockBadge } from "@/components/admin-static-ui"
+import { AdminActionForm, AdminDeleteForm, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
 import { ProductCategoryField } from "@/components/product-category-field"
 import { deleteProduct, updateInventory, updateProduct } from "@/lib/actions"
 import { discountedPriceCents, formatDiscountBadge, formatUnitPrice, titleCase } from "@/lib/format"
@@ -50,86 +48,70 @@ function productDiscountValue(product: AdminProduct) {
 }
 
 export function AdminProductList({
+  activeCategory = "",
+  activeQuery = "",
+  activeStockFilter = "all",
   categoryOptions,
   productCount,
   products
 }: {
+  activeCategory?: string
+  activeQuery?: string
+  activeStockFilter?: string
   categoryOptions: string[]
   productCount?: number
   products: AdminProduct[]
 }) {
-  const [query, setQuery] = useState("")
-  const [category, setCategory] = useState("")
-  const [stockFilter, setStockFilter] = useState("all")
-  const categories = useMemo(() => Array.from(new Set(products.map((product) => product.category.name))).sort(), [products])
-  const normalizedQuery = query.trim().toLowerCase()
-  const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
-      const matchesQuery = normalizedQuery
-        ? `${product.name} ${product.category.name}`.toLowerCase().includes(normalizedQuery)
-        : true
-      const matchesCategory = category ? product.category.name === category : true
-      const matchesStock =
-        stockFilter === "low"
-          ? product.stock > 0 && product.stock <= product.lowStockThreshold
-          : stockFilter === "out"
-            ? product.stock <= 0
-            : stockFilter === "hidden"
-              ? !product.isActive
-              : stockFilter === "active"
-                ? product.isActive
-                : true
-
-      return matchesQuery && matchesCategory && matchesStock
-    })
-  }, [category, normalizedQuery, products, stockFilter])
-
   return (
     <section className="admin-product-panel">
       <div className="admin-list-toolbar">
         <div>
           <h2>Products</h2>
-          <p>{productCount ?? products.length} items</p>
+          <p>{productCount ?? products.length} items on this page</p>
         </div>
-        <label className="admin-search">
-          <span>Search products</span>
-          <input
-            className="field"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by name or category"
-            type="search"
-            value={query}
-          />
-        </label>
-        <div className="admin-product-filters">
+        <form className="admin-product-server-filters" method="get">
           <label className="admin-search">
-            <span>Category</span>
-            <select className="select" onChange={(event) => setCategory(event.target.value)} value={category}>
-              <option value="">All categories</option>
-              {categories.map((categoryName) => (
-                <option key={categoryName} value={categoryName}>{titleCase(categoryName)}</option>
-              ))}
-            </select>
+            <span>Search products</span>
+            <input
+              className="field"
+              defaultValue={activeQuery}
+              name="q"
+              placeholder="Search by name or category"
+              type="search"
+            />
           </label>
-          <label className="admin-search">
-            <span>Stock visibility</span>
-            <select className="select" onChange={(event) => setStockFilter(event.target.value)} value={stockFilter}>
-              <option value="all">All products</option>
-              <option value="active">Active products</option>
-              <option value="low">Low stock</option>
-              <option value="out">Out of stock</option>
-              <option value="hidden">Hidden products</option>
-            </select>
-          </label>
-        </div>
+          <div className="admin-product-filters">
+            <label className="admin-search">
+              <span>Category</span>
+              <select className="select" defaultValue={activeCategory} name="category">
+                <option value="">All categories</option>
+                {categoryOptions.map((categoryName) => (
+                  <option key={categoryName} value={categoryName}>{titleCase(categoryName)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-search">
+              <span>Stock visibility</span>
+              <select className="select" defaultValue={activeStockFilter} name="stock">
+                <option value="all">All products</option>
+                <option value="active">Active products</option>
+                <option value="low">Low stock</option>
+                <option value="out">Out of stock</option>
+                <option value="hidden">Hidden products</option>
+              </select>
+            </label>
+            <button className="button secondary" type="submit">Filter</button>
+          </div>
+        </form>
       </div>
       <div className="admin-list">
         {products.length === 0 ? (
-          <EmptyState title="No products yet" message="Add your first grocery item to start building the storefront." />
-        ) : filteredProducts.length === 0 ? (
-          <EmptyState title="No matching products" message="Try a different product name or category." />
+          <EmptyState
+            title={activeQuery || activeCategory || activeStockFilter !== "all" ? "No matching products" : "No products yet"}
+            message={activeQuery || activeCategory || activeStockFilter !== "all" ? "Try a different product name, category, or stock filter." : "Add your first grocery item to start building the storefront."}
+          />
         ) : (
-          filteredProducts.map((product, index) => {
+          products.map((product, index) => {
             const effectivePrice = discountedPriceCents(product.priceCents, product.discountType, product.discountValue, product.discountPercent)
             const discountBadge = formatDiscountBadge(product.priceCents, product.discountType, product.discountValue, product.discountPercent)
 

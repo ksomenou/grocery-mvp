@@ -1,5 +1,6 @@
 import { AdminNav } from "@/components/admin-nav"
-import { AdminActionForm, EmptyState, SubmitButton } from "@/components/admin-ui"
+import { EmptyState } from "@/components/admin-static-ui"
+import { AdminActionForm, SubmitButton } from "@/components/admin-ui"
 import { ConfirmLink } from "@/components/confirm-link"
 import { CopyButton } from "@/components/copy-button"
 import { DiscountCodeInput } from "@/components/discount-code-input"

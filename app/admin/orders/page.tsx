@@ -2,7 +2,7 @@ import Link from "next/link"
 
 import { AdminNav } from "@/components/admin-nav"
 import { MobileOrderFilters } from "@/components/mobile-order-filters"
-import { EmptyState } from "@/components/admin-ui"
+import { EmptyState } from "@/components/admin-static-ui"
 import { CopyButton } from "@/components/copy-button"
 import { formatMoney } from "@/lib/format"
 import { adminOrderStatuses, isFulfillmentStatus, orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
