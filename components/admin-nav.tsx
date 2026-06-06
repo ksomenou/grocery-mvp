@@ -1,5 +1,6 @@
 import Link from "next/link"
 
+import { AdminLogoutForm } from "@/components/admin-logout-form"
 import { logoutAdmin } from "@/lib/admin-auth"
 
 export function AdminNav({
@@ -31,9 +32,7 @@ export function AdminNav({
           )
         })}
       </nav>
-      <form action={logoutAdmin}>
-        <button className="button secondary" type="submit">Log out</button>
-      </form>
+      <AdminLogoutForm action={logoutAdmin} />
     </div>
   )
 }

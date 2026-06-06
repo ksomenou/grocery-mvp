@@ -7,27 +7,75 @@ type NotificationPayload = {
   latestOrderLabel: string | null
 }
 
+type AdminSessionPayload = {
+  isAdmin: boolean
+}
+
 export function AdminNewOrderNotifier({ initialOrderId }: { initialOrderId: string | null }) {
   const [banner, setBanner] = useState<string | null>(null)
   const lastSeenRef = useRef(initialOrderId)
 
   useEffect(() => {
     let cancelled = false
+    let pollingAllowed = false
+    let timer: number | null = null
 
-    async function checkOrders() {
-      if (document.visibilityState !== "visible") {
-        return
-      }
-
+    async function fetchWithTimeout(input: string) {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 5000)
 
       try {
-        const response = await fetch("/api/admin/order-notifications", {
+        return await fetch(input, {
           cache: "no-store",
           signal: controller.signal
         })
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    }
+
+    async function confirmAdminSession() {
+      try {
+        const response = await fetchWithTimeout("/api/admin/session")
         if (!response.ok) return
+        const data = (await response.json()) as AdminSessionPayload
+        pollingAllowed = data.isAdmin
+        if (!data.isAdmin && timer !== null) {
+          window.clearInterval(timer)
+          timer = null
+        }
+      } catch {
+        // Auth probing should never interrupt the admin dashboard.
+      }
+    }
+
+    async function checkOrders() {
+      if (!pollingAllowed || document.visibilityState !== "visible") {
+        return
+      }
+
+      try {
+        const sessionResponse = await fetchWithTimeout("/api/admin/session")
+        if (!sessionResponse.ok) return
+        const session = (await sessionResponse.json()) as AdminSessionPayload
+        if (!session.isAdmin) {
+          pollingAllowed = false
+          if (timer !== null) {
+            window.clearInterval(timer)
+            timer = null
+          }
+          return
+        }
+
+        const response = await fetchWithTimeout("/api/admin/order-notifications")
+        if (!response.ok) {
+          if (response.status === 401 && timer !== null) {
+            pollingAllowed = false
+            window.clearInterval(timer)
+            timer = null
+          }
+          return
+        }
         const data = (await response.json()) as NotificationPayload
         if (cancelled || !data.latestOrderId) return
 
@@ -46,15 +94,28 @@ export function AdminNewOrderNotifier({ initialOrderId }: { initialOrderId: stri
         lastSeenRef.current = data.latestOrderId
       } catch {
         // Polling should never interrupt the admin dashboard.
-      } finally {
-        window.clearTimeout(timeout)
       }
     }
 
-    const timer = window.setInterval(checkOrders, 60000)
+    function stopPolling() {
+      pollingAllowed = false
+      if (timer !== null) {
+        window.clearInterval(timer)
+        timer = null
+      }
+    }
+
+    void confirmAdminSession().then(() => {
+      if (!cancelled && pollingAllowed) {
+        timer = window.setInterval(checkOrders, 60000)
+      }
+    })
+    window.addEventListener("freshcart-admin-logout", stopPolling)
+
     return () => {
       cancelled = true
-      window.clearInterval(timer)
+      stopPolling()
+      window.removeEventListener("freshcart-admin-logout", stopPolling)
     }
   }, [])
 

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { unstable_cache } from "next/cache"
 
 import { AdminNav } from "@/components/admin-nav"
 import { AdminNewOrderNotifier } from "@/components/admin-new-order-notifier"
@@ -104,7 +105,9 @@ export default async function AdminPage() {
   const timer = createQueryTimer("admin/dashboard")
   const [dashboardRows, recentOrders, queueOrders, operationalEvents] = await Promise.all([
     timer.run("dashboard aggregates", () =>
-      prisma.$queryRaw<DashboardAggregateRow[]>`
+      unstable_cache(
+        async () =>
+          prisma.$queryRaw<DashboardAggregateRow[]>`
         WITH paid_orders AS (
           SELECT *
           FROM "Order"
@@ -246,7 +249,16 @@ export default async function AdminPage() {
         CROSS JOIN best_sellers sellers
         CROSS JOIN fulfillment_minutes fm
         LEFT JOIN top_category tc ON true
-      `
+      `,
+        [
+          "admin-dashboard-aggregates",
+          today.toISOString(),
+          weekStart.toISOString(),
+          monthStart.toISOString(),
+          yearStart.toISOString()
+        ],
+        { revalidate: 60, tags: ["admin-dashboard-aggregates"] }
+      )()
     ),
     timer.run("recent paid orders", () =>
       prisma.order.findMany({

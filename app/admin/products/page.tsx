@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache"
+
 import { AdminNav } from "@/components/admin-nav"
 import { AdminProductList } from "@/components/admin-product-list"
 import { AdminActionForm, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
@@ -33,6 +35,41 @@ const adminProductSelect = {
   category: { select: { name: true } }
 } as const
 
+const getAdminProductSummary = unstable_cache(
+  async () => {
+    const timer = createQueryTimer("admin/products-summary")
+    const [productCount, pendingOrders, lowStockRows] = await Promise.all([
+      timer.run("product count", () => prisma.product.count()),
+      timer.run("pending paid orders", () =>
+        prisma.order.count({
+          where: {
+            paymentStatus: "PAID",
+            status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
+          }
+        })
+      ),
+      timer.run("low stock count", () =>
+        prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS count
+          FROM "Product"
+          WHERE "isActive" = true
+          AND "stock" > 0
+          AND "stock" <= "lowStockThreshold"
+        `
+      )
+    ])
+    timer.flush()
+
+    return {
+      lowStockCount: Number(lowStockRows[0]?.count ?? 0),
+      pendingOrders,
+      productCount
+    }
+  },
+  ["admin-products-summary-v1"],
+  { revalidate: 60, tags: ["admin-products-summary"] }
+)
+
 function adminProductsPageHref(page: number) {
   return page > 1 ? `/admin/products?page=${page}` : "/admin/products"
 }
@@ -45,7 +82,7 @@ export default async function AdminProductsPage({
   const { page } = await searchParams
   const currentPage = Math.max(1, Number(page) || 1)
   const timer = createQueryTimer("admin/products")
-  const [categories, products, productCount, pendingOrders, lowStockRows] = await Promise.all([
+  const [categories, products, summary] = await Promise.all([
     timer.run("categories", () => prisma.category.findMany({ orderBy: { name: "asc" }, select: { name: true } })),
     timer.run("products page", () =>
       prisma.product.findMany({
@@ -55,27 +92,10 @@ export default async function AdminProductsPage({
         take: adminProductPageSize
       })
     ),
-    timer.run("product count", () => prisma.product.count()),
-    timer.run("pending paid orders", () =>
-      prisma.order.count({
-        where: {
-          paymentStatus: "PAID",
-          status: { in: ["RECEIVED", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY"] }
-        }
-      })
-    ),
-    timer.run("low stock count", () =>
-      prisma.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*)::bigint AS count
-        FROM "Product"
-        WHERE "isActive" = true
-        AND "stock" > 0
-        AND "stock" <= "lowStockThreshold"
-      `
-    )
+    timer.run("cached summary counts", () => getAdminProductSummary())
   ])
   timer.flush()
-  const lowStockCount = Number(lowStockRows[0]?.count ?? 0)
+  const { lowStockCount, pendingOrders, productCount } = summary
   const categoryOptions = Array.from(
     new Set([...defaultCategoryNames, ...categories.map((category) => category.name)])
   )
