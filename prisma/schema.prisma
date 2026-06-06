@@ -150,6 +150,7 @@ model Product {
   @@index([categoryId])
   @@index([name])
   @@index([stock])
+  @@index([createdAt])
   @@index([isActive, createdAt])
   @@index([isActive, categoryId])
 }
@@ -217,7 +218,10 @@ model Order {
   @@index([createdAt])
   @@index([status])
   @@index([paymentStatus])
+  @@index([paymentStatus, createdAt])
   @@index([paymentStatus, status, createdAt])
+  @@index([paymentStatus, fulfillmentMethod, createdAt])
+  @@index([status, createdAt])
   @@index([stripePaymentIntentId])
   @@index([scheduledDate])
 }

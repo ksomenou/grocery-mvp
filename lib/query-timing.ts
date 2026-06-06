@@ -9,7 +9,8 @@ export function createQueryTimer(page: string) {
 
       try {
         const result = await query()
-        console.info(`[prisma:${page}] #${queryNumber} ${label} ${Date.now() - startedAt}ms`)
+        const size = Array.isArray(result) ? ` rows=${result.length}` : ""
+        console.info(`[prisma:${page}] #${queryNumber} ${label} ${Date.now() - startedAt}ms${size}`)
         return result
       } catch (error) {
         console.error(`[prisma:${page}] #${queryNumber} ${label} failed after ${Date.now() - startedAt}ms`, error)

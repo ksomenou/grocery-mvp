@@ -38,8 +38,7 @@ const adminProductSelect = {
 const getAdminProductSummary = unstable_cache(
   async () => {
     const timer = createQueryTimer("admin/products-summary")
-    const [productCount, pendingOrders, lowStockRows] = await Promise.all([
-      timer.run("product count", () => prisma.product.count()),
+    const [pendingOrders, lowStockRows] = await Promise.all([
       timer.run("pending paid orders", () =>
         prisma.order.count({
           where: {
@@ -62,8 +61,7 @@ const getAdminProductSummary = unstable_cache(
 
     return {
       lowStockCount: Number(lowStockRows[0]?.count ?? 0),
-      pendingOrders,
-      productCount
+      pendingOrders
     }
   },
   ["admin-products-summary-v1"],
@@ -89,17 +87,18 @@ export default async function AdminProductsPage({
         orderBy: { createdAt: "desc" },
         select: adminProductSelect,
         skip: (currentPage - 1) * adminProductPageSize,
-        take: adminProductPageSize
+        take: adminProductPageSize + 1
       })
     ),
     timer.run("cached summary counts", () => getAdminProductSummary())
   ])
   timer.flush()
-  const { lowStockCount, pendingOrders, productCount } = summary
+  const { lowStockCount, pendingOrders } = summary
+  const hasNextPage = products.length > adminProductPageSize
+  const visibleProducts = products.slice(0, adminProductPageSize)
   const categoryOptions = Array.from(
     new Set([...defaultCategoryNames, ...categories.map((category) => category.name)])
   )
-  const totalPages = Math.max(1, Math.ceil(productCount / adminProductPageSize))
 
   return (
     <main className="shell">
@@ -177,12 +176,12 @@ export default async function AdminProductsPage({
         </section>
 
         <div>
-          <AdminProductList categoryOptions={categoryOptions} productCount={productCount} products={products} />
-          {productCount > adminProductPageSize ? (
+          <AdminProductList categoryOptions={categoryOptions} products={visibleProducts} />
+          {currentPage > 1 || hasNextPage ? (
             <nav className="pagination-row admin-pagination" aria-label="Admin product pagination">
               <a className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminProductsPageHref(currentPage - 1)}>Previous</a>
-              <span>Page {currentPage} of {totalPages}</span>
-              <a className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={adminProductsPageHref(currentPage + 1)}>Next</a>
+              <span>Page {currentPage}</span>
+              <a className={`button secondary${!hasNextPage ? " disabled" : ""}`} href={adminProductsPageHref(currentPage + 1)}>Next</a>
             </nav>
           ) : null}
         </div>

@@ -89,7 +89,7 @@ export default async function AdminOrdersPage({
         : {})
     }
   const timer = createQueryTimer("admin/orders")
-  const [orders, orderCount, pendingOrders, lowStockRows] = await Promise.all([
+  const [orders, pendingOrders, lowStockRows] = await Promise.all([
     timer.run("orders page", () =>
       prisma.order.findMany({
         where: orderWhere,
@@ -105,10 +105,9 @@ export default async function AdminOrdersPage({
           totalCents: true
         },
         skip: (currentPage - 1) * adminOrderPageSize,
-        take: adminOrderPageSize
+        take: adminOrderPageSize + 1
       })
     ),
-    timer.run("filtered order count", () => prisma.order.count({ where: orderWhere })),
     timer.run("pending paid orders", () =>
       prisma.order.count({
         where: {
@@ -129,7 +128,8 @@ export default async function AdminOrdersPage({
   ])
   timer.flush()
   const lowStockCount = Number(lowStockRows[0]?.count ?? 0)
-  const totalPages = Math.max(1, Math.ceil(orderCount / adminOrderPageSize))
+  const hasNextPage = orders.length > adminOrderPageSize
+  const visibleOrders = orders.slice(0, adminOrderPageSize)
   const pagingParams = { date, method, payment, q, status }
 
   return (
@@ -182,10 +182,10 @@ export default async function AdminOrdersPage({
       </div>
 
       <section className="admin-list single">
-        {orders.length === 0 ? (
+        {visibleOrders.length === 0 ? (
           <EmptyState title="No orders yet" message="New paid grocery delivery orders will appear here." />
         ) : (
-          orders.map((order) => {
+          visibleOrders.map((order) => {
             const displayOrderId = shortOrderId(order.id)
 
             return (
@@ -217,13 +217,13 @@ export default async function AdminOrdersPage({
           })
         )}
       </section>
-      {orderCount > adminOrderPageSize ? (
+      {currentPage > 1 || hasNextPage ? (
         <nav className="pagination-row admin-pagination" aria-label="Admin order pagination">
           <Link className={`button secondary${currentPage <= 1 ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage - 1)} prefetch={false}>
             Previous
           </Link>
-          <span>Page {currentPage} of {totalPages}</span>
-          <Link className={`button secondary${currentPage >= totalPages ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage + 1)} prefetch={false}>
+          <span>Page {currentPage}</span>
+          <Link className={`button secondary${!hasNextPage ? " disabled" : ""}`} href={adminOrdersPageHref(pagingParams, currentPage + 1)} prefetch={false}>
             Next
           </Link>
         </nav>
