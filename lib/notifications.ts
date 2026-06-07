@@ -2,6 +2,7 @@ import type { Order, OrderItem } from "@prisma/client"
 
 import { formatLineItem, formatMoney, titleCase } from "@/lib/format"
 import { logError, logInfo } from "@/lib/log"
+import { createOperationalEvent } from "@/lib/operational-events"
 import { prisma } from "@/lib/prisma"
 import { formatSchedule } from "@/lib/scheduling"
 import { storeName } from "@/lib/store"
@@ -110,7 +111,7 @@ async function sendAdminEmail(order: OrderWithItems) {
 
   if (!configured(apiKey) || !configured(from) || !configured(to)) {
     logInfo("Admin email notification skipped because email provider is not configured.", { orderId: order.id })
-    return
+    return false
   }
 
   const response = await fetch("https://api.resend.com/emails", {
@@ -130,6 +131,8 @@ async function sendAdminEmail(order: OrderWithItems) {
   if (!response.ok) {
     throw new Error(`Resend email failed with status ${response.status}.`)
   }
+
+  return true
 }
 
 async function sendCustomerEmail(order: OrderWithItems) {
@@ -139,7 +142,7 @@ async function sendCustomerEmail(order: OrderWithItems) {
 
   if (!configured(apiKey) || !configured(from) || !configured(to)) {
     logInfo("Customer email confirmation skipped because email provider is not configured.", { orderId: order.id })
-    return
+    return false
   }
 
   const response = await fetch("https://api.resend.com/emails", {
@@ -159,6 +162,8 @@ async function sendCustomerEmail(order: OrderWithItems) {
   if (!response.ok) {
     throw new Error(`Resend customer email failed with status ${response.status}.`)
   }
+
+  return true
 }
 
 function customerStatusMessage(order: OrderWithItems) {
@@ -242,6 +247,27 @@ async function sendCustomerStatusEmail(order: OrderWithItems) {
   }
 }
 
+async function notificationAlreadySent(orderId: string, kind: string) {
+  const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM "OperationalEvent"
+      WHERE "type" = 'notification_sent'
+        AND "metadata" @> ${JSON.stringify({ orderId, kind })}::jsonb
+    ) AS "exists"
+  `
+
+  return Boolean(rows[0]?.exists)
+}
+
+async function markNotificationSent(orderId: string, kind: string) {
+  await createOperationalEvent({
+    type: "notification_sent",
+    message: `Notification sent for order ${orderId}`,
+    metadata: { orderId, kind }
+  })
+}
+
 export async function notifyPaidOrder(orderId: string) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -252,14 +278,41 @@ export async function notifyPaidOrder(orderId: string) {
     return
   }
 
-  const results = await Promise.allSettled([
-    sendCustomerEmail(order),
-    sendAdminEmail(order)
-  ])
+  if (order.paymentStatus !== "PAID") {
+    logInfo("Paid order notification skipped because order is not paid.", { orderId, paymentStatus: order.paymentStatus })
+    return
+  }
+
+  const jobs = [
+    {
+      kind: "paid_customer_email",
+      label: "customer email",
+      send: () => sendCustomerEmail(order)
+    },
+    {
+      kind: "paid_admin_email",
+      label: "admin email",
+      send: () => sendAdminEmail(order)
+    }
+  ]
+
+  const results = await Promise.allSettled(
+    jobs.map(async (job) => {
+      if (await notificationAlreadySent(orderId, job.kind)) {
+        logInfo(`Paid order ${job.label} notification already sent.`, { orderId })
+        return
+      }
+
+      const sent = await job.send()
+      if (sent) {
+        await markNotificationSent(orderId, job.kind)
+      }
+    })
+  )
 
   results.forEach((result, index) => {
     if (result.status === "rejected") {
-      const label = ["customer email", "admin email"][index]
+      const label = jobs[index]?.label ?? "email"
       logError(`Paid order ${label} notification failed.`, result.reason, { orderId })
     }
   })
@@ -276,6 +329,15 @@ export async function notifyOrderStatusChanged(orderId: string, previousStatus: 
   })
 
   if (!order) {
+    return
+  }
+
+  if (order.status !== nextStatus) {
+    logInfo("Order status notification skipped because saved status does not match requested status.", {
+      orderId,
+      nextStatus,
+      savedStatus: order.status
+    })
     return
   }
 

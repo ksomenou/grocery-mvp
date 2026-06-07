@@ -115,8 +115,7 @@ export async function POST(request: Request) {
       metadata: {
         checkoutStatus: "order_submitted",
         orderId: order.id
-      },
-      receipt_email: checkoutInput.customerEmail
+      }
     })
 
     return NextResponse.json({

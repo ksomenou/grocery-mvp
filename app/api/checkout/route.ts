@@ -26,8 +26,7 @@ export async function POST(request: Request) {
       currency: "usd",
       description: "Grocery checkout payment",
       metadata: { checkoutStatus: "payment_fields_loaded" },
-      payment_method_types: ["card"],
-      receipt_email: parsed.data.customerEmail
+      payment_method_types: ["card"]
     })
 
     return NextResponse.json({

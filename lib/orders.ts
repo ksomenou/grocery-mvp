@@ -242,7 +242,7 @@ async function markOrderPaidAndReduceStockWithReference(
     logInfo("Stripe payment finalized and inventory reduced.", { orderId, ...stripeReferenceMetadata(reference) })
   }
 
-  if (result.finalizedNow) {
+  if (result.finalizedNow || result.order.paymentStatus === PaymentStatus.PAID) {
     await notifyPaidOrder(result.order.id)
   }
 

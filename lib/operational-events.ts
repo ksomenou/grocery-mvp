@@ -11,6 +11,7 @@ export type OperationalEventType =
   | "discount_created"
   | "product_created"
   | "product_sold_out"
+  | "notification_sent"
 
 export async function createOperationalEvent({
   type,
@@ -79,7 +80,8 @@ export function operationalEventIcon(type: string) {
     refund_processed: "RF",
     discount_created: "DS",
     product_created: "PR",
-    product_sold_out: "SO"
+    product_sold_out: "SO",
+    notification_sent: "NS"
   }
 
   return icons[type] ?? "EV"
