@@ -13,6 +13,16 @@ function configured(value?: string | null) {
   return Boolean(value && value.trim() && !value.includes("replace_me") && !value.includes("change-me"))
 }
 
+function emailConfigState(to?: string | null) {
+  return {
+    hasResendApiKey: configured(process.env.RESEND_API_KEY),
+    hasEmailFrom: configured(process.env.EMAIL_FROM),
+    hasRecipient: configured(to),
+    emailFrom: process.env.EMAIL_FROM,
+    recipient: to
+  }
+}
+
 function orderLines(order: OrderWithItems) {
   return order.items
     .map((item) => `- ${formatLineItem(item.productName, item.quantity, item.priceCents, item.saleUnit)}`)
@@ -110,7 +120,10 @@ async function sendAdminEmail(order: OrderWithItems) {
   const to = await adminNotificationEmail()
 
   if (!configured(apiKey) || !configured(from) || !configured(to)) {
-    logInfo("Admin email notification skipped because email provider is not configured.", { orderId: order.id })
+    logError("Admin email notification skipped because email provider is not configured.", new Error("Missing email configuration."), {
+      orderId: order.id,
+      ...emailConfigState(to)
+    })
     return false
   }
 
@@ -129,9 +142,11 @@ async function sendAdminEmail(order: OrderWithItems) {
   })
 
   if (!response.ok) {
-    throw new Error(`Resend email failed with status ${response.status}.`)
+    const body = await response.text().catch(() => "")
+    throw new Error(`Resend admin email failed with status ${response.status}: ${body}`)
   }
 
+  logInfo("Admin new order email sent.", { orderId: order.id, to })
   return true
 }
 
@@ -141,7 +156,10 @@ async function sendCustomerEmail(order: OrderWithItems) {
   const to = order.customerEmail
 
   if (!configured(apiKey) || !configured(from) || !configured(to)) {
-    logInfo("Customer email confirmation skipped because email provider is not configured.", { orderId: order.id })
+    logError("Customer order confirmation email skipped because email provider is not configured.", new Error("Missing email configuration."), {
+      orderId: order.id,
+      ...emailConfigState(to)
+    })
     return false
   }
 
@@ -160,9 +178,11 @@ async function sendCustomerEmail(order: OrderWithItems) {
   })
 
   if (!response.ok) {
-    throw new Error(`Resend customer email failed with status ${response.status}.`)
+    const body = await response.text().catch(() => "")
+    throw new Error(`Resend customer email failed with status ${response.status}: ${body}`)
   }
 
+  logInfo("Customer order confirmation email sent.", { orderId: order.id, to })
   return true
 }
 
@@ -224,7 +244,11 @@ async function sendCustomerStatusEmail(order: OrderWithItems) {
   const to = order.customerEmail
 
   if (!configured(apiKey) || !configured(from) || !configured(to)) {
-    logInfo("Customer status email skipped because email provider is not configured.", { orderId: order.id })
+    logError("Customer status email skipped because email provider is not configured.", new Error("Missing email configuration."), {
+      orderId: order.id,
+      status: order.status,
+      ...emailConfigState(to)
+    })
     return
   }
 
@@ -243,21 +267,29 @@ async function sendCustomerStatusEmail(order: OrderWithItems) {
   })
 
   if (!response.ok) {
-    throw new Error(`Resend customer status email failed with status ${response.status}.`)
+    const body = await response.text().catch(() => "")
+    throw new Error(`Resend customer status email failed with status ${response.status}: ${body}`)
   }
+
+  logInfo("Customer status update email sent.", { orderId: order.id, status: order.status, to })
 }
 
 async function notificationAlreadySent(orderId: string, kind: string) {
-  const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1
-      FROM "OperationalEvent"
-      WHERE "type" = 'notification_sent'
-        AND "metadata" @> ${JSON.stringify({ orderId, kind })}::jsonb
-    ) AS "exists"
-  `
+  try {
+    const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM "OperationalEvent"
+        WHERE "type" = 'notification_sent'
+          AND "metadata" @> ${JSON.stringify({ orderId, kind })}::jsonb
+      ) AS "exists"
+    `
 
-  return Boolean(rows[0]?.exists)
+    return Boolean(rows[0]?.exists)
+  } catch (error) {
+    logError("Notification sent marker lookup failed; attempting email send.", error, { orderId, kind })
+    return false
+  }
 }
 
 async function markNotificationSent(orderId: string, kind: string) {
@@ -269,12 +301,14 @@ async function markNotificationSent(orderId: string, kind: string) {
 }
 
 export async function notifyPaidOrder(orderId: string) {
+  logInfo("Paid order notification flow started.", { orderId })
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { items: true }
   })
 
   if (!order) {
+    logError("Paid order notification skipped because order was not found.", new Error("Order not found."), { orderId })
     return
   }
 
@@ -306,6 +340,7 @@ export async function notifyPaidOrder(orderId: string) {
       const sent = await job.send()
       if (sent) {
         await markNotificationSent(orderId, job.kind)
+        logInfo(`Paid order ${job.label} notification marked sent.`, { orderId, kind: job.kind })
       }
     })
   )
@@ -319,6 +354,7 @@ export async function notifyPaidOrder(orderId: string) {
 }
 
 export async function notifyOrderStatusChanged(orderId: string, previousStatus: string, nextStatus: string) {
+  logInfo("Order status notification flow started.", { orderId, previousStatus, nextStatus })
   if (previousStatus === nextStatus) {
     return
   }
@@ -329,6 +365,7 @@ export async function notifyOrderStatusChanged(orderId: string, previousStatus: 
   })
 
   if (!order) {
+    logError("Order status notification skipped because order was not found.", new Error("Order not found."), { orderId, previousStatus, nextStatus })
     return
   }
 
