@@ -13,6 +13,7 @@ import { notifyOrderStatusChanged } from "@/lib/notifications"
 import { createOperationalEvent } from "@/lib/operational-events"
 import { adminOrderStatuses, assertValidOrderTransition, isFulfillmentStatus } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
+import { testOrderCleanupWhere } from "@/lib/test-data-cleanup"
 
 export type ActionState = {
   ok: boolean
@@ -793,6 +794,34 @@ export async function updateOrderStatus(orderId: string, _state: ActionState = i
     return { ok: true, message: "Order status updated." }
   } catch (error) {
     return actionError(error, "Could not update order.")
+  }
+}
+
+export async function deleteTestOrders(_state: ActionState = initialActionState, _formData?: FormData): Promise<ActionState> {
+  try {
+    await requireAdmin()
+    const where = testOrderCleanupWhere()
+    const orders = await prisma.order.findMany({
+      where,
+      select: { id: true }
+    })
+
+    if (orders.length === 0) {
+      return { ok: true, message: "No test orders matched the cleanup rules." }
+    }
+
+    const orderIds = orders.map((order) => order.id)
+
+    await prisma.$transaction([
+      prisma.orderItem.deleteMany({ where: { orderId: { in: orderIds } } }),
+      prisma.order.deleteMany({ where: { id: { in: orderIds } } })
+    ])
+
+    revalidatePath("/admin")
+    revalidatePath("/admin/orders")
+    return { ok: true, message: `Deleted ${orders.length} test ${orders.length === 1 ? "order" : "orders"}.` }
+  } catch (error) {
+    return actionError(error, "Could not delete test orders.")
   }
 }
 

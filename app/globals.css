@@ -6127,6 +6127,48 @@ textarea {
     min-width: min(100%, 150px);
   }
 
+  .storefront-market-visual {
+    display: grid;
+    gap: 9px;
+    grid-template-columns: 1.1fr 0.9fr 0.9fr;
+    margin: 6px auto 0;
+    max-width: 430px;
+    pointer-events: none;
+    position: relative;
+    width: 100%;
+    z-index: 1;
+  }
+
+  .market-card,
+  .market-card.large,
+  .market-card.small {
+    background: white;
+    border: 1px solid rgba(187, 247, 208, 0.86);
+    border-radius: 15px;
+    box-shadow: 0 10px 22px rgba(16, 32, 21, 0.12);
+    height: clamp(72px, 19vw, 92px);
+    position: relative;
+    transform: none;
+    width: 100%;
+  }
+
+  .market-card.large {
+    height: clamp(86px, 22vw, 108px);
+  }
+
+  .market-card.top,
+  .market-card.bottom {
+    bottom: auto;
+    left: auto;
+    right: auto;
+    top: auto;
+  }
+
+  .market-card-image img {
+    object-fit: cover;
+    padding: 4px;
+  }
+
   .retail-hero {
     padding-top: 8px;
   }
@@ -7787,6 +7829,7 @@ textarea {
     grid-column: 2;
     margin-top: 0;
   }
+
 }
 
 @media (max-width: 374px) {
