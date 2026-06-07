@@ -52,7 +52,7 @@ const categoryIcons: Record<string, string> = {
   Breakfast: "\uD83E\uDD63",
   Snacks: "\uD83C\uDF6A",
   Drinks: "\uD83E\uDD64",
-  "Laundry & Cleaning": "\uD83E\uDDF4",
+  "Health & Beauty": "\u2728",
   "African Foods": "\uD83C\uDF0D",
   "Caribbean Foods": "\uD83C\uDF34"
 }

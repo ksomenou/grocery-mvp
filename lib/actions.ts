@@ -218,19 +218,45 @@ async function saveImage(file: File | null, fallback?: string) {
 }
 
 async function findOrCreateCategory(categoryName: string) {
-  const name = categoryName.trim()
+  const requestedName = categoryName.trim()
+  const name = requestedName.toLowerCase() === "laundry & cleaning" ? "Health & Beauty" : requestedName
+  const slug = slugify(name)
+  const legacySlug = slugify(requestedName)
   const existing = await prisma.category.findFirst({
-    where: { name: { equals: name, mode: "insensitive" } }
+    where: {
+      OR: [
+        { slug },
+        { name: { equals: name, mode: "insensitive" } },
+        { slug: legacySlug },
+        { name: { equals: requestedName, mode: "insensitive" } }
+      ]
+    },
+    orderBy: { updatedAt: "desc" }
   })
 
   if (existing) {
+    if (name === "Health & Beauty" && (existing.name !== name || existing.slug !== "health-beauty")) {
+      try {
+        return await prisma.category.update({
+          where: { id: existing.id },
+          data: { name, slug: "health-beauty" }
+        })
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          return prisma.category.findUniqueOrThrow({ where: { slug: "health-beauty" } })
+        }
+
+        throw error
+      }
+    }
+
     return existing
   }
 
   return prisma.category.create({
     data: {
       name,
-      slug: `${slugify(name)}-${Date.now().toString(36)}`,
+      slug: name === "Health & Beauty" ? "health-beauty" : `${slug}-${Date.now().toString(36)}`,
       description: `Products grouped under ${name}.`,
       imageUrl: "/images/placeholder.svg"
     }

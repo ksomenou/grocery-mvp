@@ -10,7 +10,7 @@ export const defaultCategoryNames = [
   "Breakfast",
   "Snacks",
   "Drinks",
-  "Laundry & Cleaning",
+  "Health & Beauty",
   "African Foods",
   "Caribbean Foods"
 ]
