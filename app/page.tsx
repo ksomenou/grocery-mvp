@@ -265,6 +265,21 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <section className="shell section home-section">
+        <div className="section-head">
+          <div>
+            <h2>Recommended for you</h2>
+            <p>Everyday essentials and local favorites picked for your basket.</p>
+          </div>
+          <Link className="button secondary" href="/products">View all</Link>
+        </div>
+        <div className={shelfClassName(recommended.length)}>
+          {recommended.map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      </section>
+
       {shelfSections.map((shelf) => (
         <section className="shell section home-section" key={shelf.title}>
           <div className="section-head">

@@ -142,7 +142,7 @@ export default async function AdminProductsPage({
   )
 
   return (
-    <main className="shell">
+    <main className="shell admin-products-page">
       <div className="page-title">
         <p className="admin-kicker">Store admin</p>
         <h1>Products</h1>
@@ -216,7 +216,7 @@ export default async function AdminProductsPage({
           </AdminActionForm>
         </section>
 
-        <div>
+        <div className="admin-products-list-column">
           <AdminProductList
             activeCategory={activeCategory}
             activeQuery={activeQuery}
