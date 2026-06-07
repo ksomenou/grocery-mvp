@@ -4,7 +4,7 @@ import type { Metadata } from "next"
 import { ClearCartOnConfirmation } from "@/components/clear-cart-on-confirmation"
 import { CustomerOrderStatus } from "@/components/customer-order-status"
 import { formatLineItem, formatMoney, titleCase } from "@/lib/format"
-import { markOrderPaidAndReduceStock, markOrderPaidAndReduceStockByPaymentIntent, orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
+import { markOrderPaidAndReduceStock, markOrderPaidAndReduceStockByPaymentIntent } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
 import { formatSchedule } from "@/lib/scheduling"
 import { getStripe } from "@/lib/stripe"
@@ -15,6 +15,24 @@ export const dynamic = "force-dynamic"
 export const metadata: Metadata = {
   title: "Order Confirmation",
   description: `Review your ${storeName} order confirmation and fulfillment status.`
+}
+
+function customerOrderStatusLabel(status: string) {
+  if (status === "CANCELLED") return "Order cancelled"
+  if (status === "REFUNDED") return "Order refunded"
+  if (status === "DELIVERED") return "Completed"
+  if (status === "PREPARING") return "Preparing"
+  if (status === "READY_FOR_PICKUP") return "Ready for pickup"
+  if (status === "OUT_FOR_DELIVERY") return "Out for delivery"
+  return "Order received"
+}
+
+function customerPaymentStatusLabel(status: string, fulfillmentMethod: string) {
+  if (status === "PAID") return "Paid"
+  if (status === "FAILED") return "Payment failed"
+  if (status === "REFUNDED") return "Refunded"
+  if (fulfillmentMethod === "PICKUP") return "Payment due at pickup"
+  return "Payment pending"
 }
 
 export default async function OrderConfirmationPage({
@@ -39,7 +57,8 @@ export default async function OrderConfirmationPage({
 
   if (orderId && paymentIntentId) {
     const paymentIntent = await getStripe().paymentIntents.retrieve(paymentIntentId)
-    if ((paymentIntent.status === "succeeded" || paymentIntent.status === "processing") && paymentIntent.metadata?.orderId === orderId) {
+    const metadataOrderId = paymentIntent.metadata?.orderId
+    if ((paymentIntent.status === "succeeded" || paymentIntent.status === "processing") && (!metadataOrderId || metadataOrderId === orderId)) {
       paymentVerified = true
       if (paymentIntent.status === "succeeded") {
         try {
@@ -66,26 +85,29 @@ export default async function OrderConfirmationPage({
       <ClearCartOnConfirmation />
       <section className="panel" style={{ marginTop: 30 }}>
         <p className="badge">Order received</p>
-        <h1 className="order-confirmation-heading">Thanks for shopping {storeName}.</h1>
+        <h1 className="order-confirmation-heading">Thank you — we received your order.</h1>
         {order ? (
           <>
             {(() => {
               const schedule = formatSchedule(order.scheduledDate, order.scheduledWindow)
               const trackerToken = token ?? order.accessToken
+              const fulfillmentLabel = titleCase(order.fulfillmentMethod.toLowerCase())
+              const pickupOrDeliveryLabel = order.fulfillmentMethod === "DELIVERY" ? "Delivery" : "Pickup"
 
               return (
                 <>
             <p className="muted">
-              Order {order.id} is confirmed. We sent the grocery team your items and fulfillment details.
+              Your order has been sent to our grocery team. We&apos;ll prepare it for your scheduled pickup or delivery.
             </p>
             <div style={{ margin: "20px 0" }}>
+              <h2 className="order-confirmation-section-title">Next steps</h2>
               <div className="summary-line">
                 <span>Fulfillment</span>
-                <strong>{titleCase(order.fulfillmentMethod.toLowerCase())}</strong>
+                <strong>{fulfillmentLabel}</strong>
               </div>
               {schedule ? (
                 <div className="summary-line">
-                  <span>{order.fulfillmentMethod === "DELIVERY" ? "Scheduled delivery" : "Scheduled pickup"}</span>
+                  <span>{pickupOrDeliveryLabel} date/time</span>
                   <strong>{schedule}</strong>
                 </div>
               ) : order.deliveryWindow ? (
@@ -101,7 +123,7 @@ export default async function OrderConfirmationPage({
                 </div>
               ) : null}
               <div className="summary-line">
-                <span>{order.fulfillmentMethod === "DELIVERY" ? "Delivery address" : "Pickup"}</span>
+                <span>{order.fulfillmentMethod === "DELIVERY" ? "Delivery address" : "Pickup method"}</span>
                 <strong>{order.fulfillmentMethod === "DELIVERY" ? order.deliveryAddress : "In-store pickup"}</strong>
               </div>
               {order.deliveryInstructions ? (
@@ -115,11 +137,11 @@ export default async function OrderConfirmationPage({
                   initial={{
                     fulfillmentMethod: order.fulfillmentMethod,
                     isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "REFUNDED",
-                    paymentLabel: paymentStatusLabel(order.paymentStatus),
+                    paymentLabel: customerPaymentStatusLabel(order.paymentStatus, order.fulfillmentMethod),
                     paymentStatus: order.paymentStatus,
                     schedule,
                     status: order.status,
-                    statusLabel: orderStatusLabel(order.status, order.fulfillmentMethod),
+                    statusLabel: customerOrderStatusLabel(order.status),
                     updatedAt: order.updatedAt.toISOString()
                   }}
                   orderId={order.id}
@@ -129,14 +151,15 @@ export default async function OrderConfirmationPage({
                 <>
                   <div className="summary-line">
                     <span>Order status</span>
-                    <strong>{orderStatusLabel(order.status, order.fulfillmentMethod)}</strong>
+                    <strong>{customerOrderStatusLabel(order.status)}</strong>
                   </div>
                   <div className="summary-line">
                     <span>Payment status</span>
-                    <strong>{paymentStatusLabel(order.paymentStatus)}</strong>
+                    <strong>{customerPaymentStatusLabel(order.paymentStatus, order.fulfillmentMethod)}</strong>
                   </div>
                 </>
               )}
+              <h2 className="order-confirmation-section-title">Items ordered</h2>
               {order.items.map((item) => (
                 <div className="summary-line" key={item.id}>
                   <span>{formatLineItem(item.productName, item.quantity, item.priceCents, item.saleUnit)}</span>

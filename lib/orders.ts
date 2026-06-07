@@ -93,13 +93,21 @@ type StripePaymentReference =
   | { type: "session"; id: string }
   | { type: "payment_intent"; id: string }
 
+type PaidOrderFinalizeOptions = {
+  repairCancelledPaid?: boolean
+}
+
 function stripeReferenceMetadata(reference: StripePaymentReference): Record<string, string> {
   return reference.type === "session"
     ? { stripeSessionId: reference.id }
     : { stripePaymentIntentId: reference.id }
 }
 
-async function markOrderPaidAndReduceStockWithReference(orderId: string, reference: StripePaymentReference) {
+async function markOrderPaidAndReduceStockWithReference(
+  orderId: string,
+  reference: StripePaymentReference,
+  options: PaidOrderFinalizeOptions = {}
+) {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -114,24 +122,26 @@ async function markOrderPaidAndReduceStockWithReference(orderId: string, referen
       throw new Error("Stripe session does not match this order.")
     }
 
-    if (reference.type === "payment_intent" && order.stripePaymentIntentId && order.stripePaymentIntentId !== reference.id) {
+    if (reference.type === "payment_intent" && order.stripePaymentIntentId !== reference.id) {
       throw new Error("Stripe payment intent does not match this order.")
     }
 
     if (order.paymentStatus === "REFUNDED" || order.status === "REFUNDED") {
-      return { finalizedNow: false, order }
+      return { finalizedNow: false, order, stockEventItems: [] }
     }
 
     const claim = await tx.order.updateMany({
       where: {
         id: order.id,
         stockReduced: false,
-        paymentStatus: { not: PaymentStatus.PAID }
+        paymentStatus: { not: PaymentStatus.REFUNDED },
+        status: { not: "REFUNDED" }
       },
       data: {
         paymentStatus: PaymentStatus.PAID,
         ...(reference.type === "session" ? { stripeSessionId: reference.id } : { stripePaymentIntentId: reference.id }),
         stockReduced: true,
+        status: "RECEIVED",
         paidAt: new Date()
       }
     })
@@ -142,19 +152,15 @@ async function markOrderPaidAndReduceStockWithReference(orderId: string, referen
         data: {
           paymentStatus: PaymentStatus.PAID,
           ...(reference.type === "session" ? { stripeSessionId: reference.id } : { stripePaymentIntentId: reference.id }),
+          ...(options.repairCancelledPaid && order.paymentStatus === PaymentStatus.PAID && order.stockReduced && order.status === "CANCELLED"
+            ? { status: "RECEIVED" as const }
+            : {}),
+          ...(!order.stockReduced && order.status === "CANCELLED" ? { status: "RECEIVED" as const } : {}),
           paidAt: order.paidAt ?? new Date()
         }
       })
-      return { finalizedNow: false, order: updatedOrder }
+      return { finalizedNow: false, order: updatedOrder, stockEventItems: [] }
     }
-
-    await tx.$executeRaw`
-      UPDATE "Order"
-      SET
-        "status" = 'RECEIVED'::"OrderStatus",
-        "updatedAt" = NOW()
-      WHERE "id" = ${order.id}
-    `
 
     if (order.discountCode && order.discountCents > 0) {
       await tx.discountCode.updateMany({
@@ -192,11 +198,25 @@ async function markOrderPaidAndReduceStockWithReference(orderId: string, referen
       }
     }
 
-    for (const item of order.items) {
-      const product = await tx.product.findUnique({
-        where: { id: item.productId },
-        select: { lowStockThreshold: true, stock: true }
-      })
+    return {
+      finalizedNow: true,
+      order,
+      stockEventItems: order.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productName
+      }))
+    }
+  })
+
+  if (result.finalizedNow) {
+    const products = await prisma.product.findMany({
+      where: { id: { in: result.stockEventItems.map((item) => item.productId) } },
+      select: { id: true, lowStockThreshold: true, stock: true }
+    })
+    const productById = new Map(products.map((product) => [product.id, product]))
+
+    for (const item of result.stockEventItems) {
+      const product = productById.get(item.productId)
 
       if (product && product.stock <= 0) {
         await createOperationalEvent({
@@ -215,14 +235,12 @@ async function markOrderPaidAndReduceStockWithReference(orderId: string, referen
 
     await createOperationalEvent({
       type: "payment_succeeded",
-      message: `Payment confirmed for order ${order.id}`,
+      message: `Payment confirmed for order ${result.order.id}`,
       metadata: { orderId, ...stripeReferenceMetadata(reference) }
     })
 
     logInfo("Stripe payment finalized and inventory reduced.", { orderId, ...stripeReferenceMetadata(reference) })
-
-    return { finalizedNow: true, order }
-  })
+  }
 
   if (result.finalizedNow) {
     await notifyPaidOrder(result.order.id)
@@ -235,8 +253,12 @@ export async function markOrderPaidAndReduceStock(orderId: string, stripeSession
   return markOrderPaidAndReduceStockWithReference(orderId, { type: "session", id: stripeSessionId })
 }
 
-export async function markOrderPaidAndReduceStockByPaymentIntent(orderId: string, stripePaymentIntentId: string) {
-  return markOrderPaidAndReduceStockWithReference(orderId, { type: "payment_intent", id: stripePaymentIntentId })
+export async function markOrderPaidAndReduceStockByPaymentIntent(
+  orderId: string,
+  stripePaymentIntentId: string,
+  options?: PaidOrderFinalizeOptions
+) {
+  return markOrderPaidAndReduceStockWithReference(orderId, { type: "payment_intent", id: stripePaymentIntentId }, options)
 }
 
 export async function markOrderPaymentFailedBySession(stripeSessionId: string) {

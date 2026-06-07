@@ -10,7 +10,22 @@ import {
   markOrderRefundedByPaymentIntent,
   markOrderRefundedBySession
 } from "@/lib/orders"
+import { prisma } from "@/lib/prisma"
 import { getStripe } from "@/lib/stripe"
+
+async function orderIdForPaymentIntent(paymentIntent: Stripe.PaymentIntent) {
+  const metadataOrderId = paymentIntent.metadata?.orderId
+  if (metadataOrderId) {
+    return metadataOrderId
+  }
+
+  const order = await prisma.order.findFirst({
+    where: { stripePaymentIntentId: paymentIntent.id },
+    select: { id: true }
+  })
+
+  return order?.id
+}
 
 export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -35,11 +50,13 @@ export async function POST(request: Request) {
   try {
     if (event.type === "payment_intent.succeeded") {
       const paymentIntent = event.data.object as Stripe.PaymentIntent
-      const orderId = paymentIntent.metadata?.orderId
+      const orderId = await orderIdForPaymentIntent(paymentIntent)
 
       if (orderId) {
         await markOrderPaidAndReduceStockByPaymentIntent(orderId, paymentIntent.id)
         logInfo("Processed payment_intent.succeeded webhook.", { orderId, stripePaymentIntentId: paymentIntent.id })
+      } else {
+        logInfo("Payment intent succeeded without a matching order.", { stripePaymentIntentId: paymentIntent.id })
       }
     }
 

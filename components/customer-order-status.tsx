@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react"
 
-import { FulfillmentTimeline } from "@/components/admin-order-workflow"
-
 type FulfillmentStatus =
   | "RECEIVED"
   | "CONFIRMED"
@@ -25,6 +23,63 @@ type OrderStatusSnapshot = {
   status: FulfillmentStatus
   statusLabel: string
   updatedAt: string
+}
+
+function customerOrderStatusLabel(status: FulfillmentStatus) {
+  if (status === "CANCELLED") return "Order cancelled"
+  if (status === "REFUNDED") return "Order refunded"
+  if (status === "DELIVERED") return "Completed"
+  if (status === "PREPARING") return "Preparing"
+  if (status === "READY_FOR_PICKUP") return "Ready for pickup"
+  if (status === "OUT_FOR_DELIVERY") return "Out for delivery"
+  return "Order received"
+}
+
+function customerPaymentStatusLabel(status: string, fulfillmentMethod: FulfillmentMethod) {
+  if (status === "PAID") return "Paid"
+  if (status === "FAILED") return "Payment failed"
+  if (status === "REFUNDED") return "Refunded"
+  if (fulfillmentMethod === "PICKUP") return "Payment due at pickup"
+  return "Payment pending"
+}
+
+function progressIndex(status: FulfillmentStatus) {
+  if (status === "DELIVERED") return 3
+  if (status === "READY_FOR_PICKUP" || status === "OUT_FOR_DELIVERY") return 2
+  if (status === "PREPARING") return 1
+  if (status === "CANCELLED" || status === "REFUNDED") return -1
+  return 0
+}
+
+function CustomerProgressCard({
+  fulfillmentMethod,
+  status
+}: {
+  fulfillmentMethod: FulfillmentMethod
+  status: FulfillmentStatus
+}) {
+  const steps = [
+    "Order received",
+    "Preparing",
+    fulfillmentMethod === "DELIVERY" ? "Out for delivery" : "Ready for pickup",
+    "Completed"
+  ]
+  const activeIndex = progressIndex(status)
+
+  return (
+    <div className="customer-progress-card" aria-label="Order progress">
+      {activeIndex < 0 ? (
+        <p>Your order is no longer in active preparation. Please contact us if you need help with this order.</p>
+      ) : (
+        steps.map((step, index) => (
+          <div className={index <= activeIndex ? "active" : ""} key={step}>
+            <span>{index + 1}</span>
+            <strong>{step}</strong>
+          </div>
+        ))
+      )}
+    </div>
+  )
 }
 
 export function CustomerOrderStatus({
@@ -73,11 +128,11 @@ export function CustomerOrderStatus({
     <div className="customer-order-status" aria-live="polite">
       <div className="summary-line">
         <span>Order status</span>
-        <strong>{snapshot.statusLabel}</strong>
+        <strong>{customerOrderStatusLabel(snapshot.status)}</strong>
       </div>
       <div className="summary-line">
         <span>Payment status</span>
-        <strong>{snapshot.paymentLabel}</strong>
+        <strong>{customerPaymentStatusLabel(snapshot.paymentStatus, snapshot.fulfillmentMethod)}</strong>
       </div>
       {snapshot.schedule ? (
         <div className="summary-line">
@@ -85,7 +140,7 @@ export function CustomerOrderStatus({
           <strong>{snapshot.schedule}</strong>
         </div>
       ) : null}
-      <FulfillmentTimeline fulfillmentMethod={snapshot.fulfillmentMethod} status={snapshot.status} />
+      <CustomerProgressCard fulfillmentMethod={snapshot.fulfillmentMethod} status={snapshot.status} />
     </div>
   )
 }

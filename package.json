@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "migrate:order-lifecycle": "tsx scripts/migrate-order-lifecycle.ts",
+    "repair:paid-order": "tsx scripts/repair-paid-order.ts",
     "seed:categories": "tsx scripts/seed-categories.ts",
     "seed:admin": "tsx scripts/seed-admin.ts"
   },

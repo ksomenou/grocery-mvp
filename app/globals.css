@@ -2323,6 +2323,67 @@ textarea {
   margin-bottom: 8px;
 }
 
+.order-confirmation-section-title {
+  color: var(--ink);
+  font-size: 1rem;
+  margin: 18px 0 8px;
+}
+
+.customer-order-status {
+  display: grid;
+  gap: 4px;
+}
+
+.customer-progress-card {
+  background: linear-gradient(135deg, #f0fdf4, #fffef0);
+  border: 1px solid #c7f0d2;
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 4px;
+  padding: 12px;
+}
+
+.customer-progress-card div {
+  align-items: center;
+  color: var(--muted);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 30px 1fr;
+}
+
+.customer-progress-card span {
+  align-items: center;
+  background: #e5ece6;
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 900;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.customer-progress-card strong {
+  font-size: 0.92rem;
+}
+
+.customer-progress-card .active {
+  color: var(--green-dark);
+}
+
+.customer-progress-card .active span {
+  background: var(--green);
+  color: white;
+}
+
+.customer-progress-card p {
+  color: var(--muted);
+  font-weight: 800;
+  margin: 0;
+}
+
 .policy-panel {
   margin: 30px auto;
   max-width: 980px;
