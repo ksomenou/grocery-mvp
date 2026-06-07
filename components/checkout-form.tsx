@@ -85,7 +85,7 @@ export function CheckoutForm({
   const [discountLoading, setDiscountLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
-  const [paymentIntent, setPaymentIntent] = useState<{ clientSecret: string; fingerprint: string; orderId: string; token: string } | null>(null)
+  const [paymentIntent, setPaymentIntent] = useState<{ clientSecret: string; fingerprint: string; paymentIntentId: string } | null>(null)
   const [summaryCollapsed, setSummaryCollapsed] = useState(false)
   const paymentRequestInFlightRef = useRef("")
   const summaryAutoCollapsedRef = useRef(false)
@@ -170,6 +170,32 @@ export function CheckoutForm({
       items: items.map((item) => ({ id: item.id, quantity: item.quantity })),
       scheduledWindow,
       selectedDateInput
+    }),
+    [
+      appliedDiscountCode,
+      customerEmail,
+      customerName,
+      customerPhone,
+      deliveryAddress,
+      deliveryInstructions,
+      fulfillmentMethod,
+      items,
+      scheduledWindow,
+      selectedDateInput
+    ]
+  )
+  const checkoutPayload = useMemo(
+    () => ({
+      customerName,
+      customerEmail,
+      customerPhone: customerPhone.trim(),
+      fulfillmentMethod,
+      deliveryAddress: fulfillmentMethod === "DELIVERY" ? deliveryAddress : "",
+      deliveryInstructions: fulfillmentMethod === "DELIVERY" ? deliveryInstructions : "",
+      scheduledDate: selectedDateInput,
+      scheduledWindow,
+      discountCode: appliedDiscountCode || undefined,
+      items: items.map(({ id, quantity }) => ({ id, quantity }))
     }),
     [
       appliedDiscountCode,
@@ -344,16 +370,7 @@ export function CheckoutForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerName,
-          customerEmail,
-          customerPhone: customerPhone.trim(),
-          fulfillmentMethod,
-          deliveryAddress: fulfillmentMethod === "DELIVERY" ? deliveryAddress : "",
-          deliveryInstructions: fulfillmentMethod === "DELIVERY" ? deliveryInstructions : "",
-          scheduledDate: selectedDateInput,
-          scheduledWindow,
-          discountCode: appliedDiscountCode || undefined,
-          items: items.map(({ id, quantity }) => ({ id, quantity }))
+          ...checkoutPayload
         })
       })
 
@@ -364,7 +381,7 @@ export function CheckoutForm({
         return
       }
 
-      if (!data.clientSecret || !data.orderId || !data.token) {
+      if (!data.clientSecret || !data.paymentIntentId) {
         setError("Checkout could not start the secure payment form.")
         setLoading(false)
         return
@@ -373,8 +390,7 @@ export function CheckoutForm({
       setPaymentIntent({
         clientSecret: data.clientSecret,
         fingerprint,
-        orderId: data.orderId,
-        token: data.token
+        paymentIntentId: data.paymentIntentId
       })
       setLoading(false)
     } catch {
@@ -387,20 +403,12 @@ export function CheckoutForm({
     }
   }, [
     activePaymentIntent,
-    appliedDiscountCode,
-    customerEmail,
-    customerName,
-    customerPhone,
-    deliveryAddress,
-    deliveryInstructions,
     checkoutDetailsAreValid,
-    fulfillmentMethod,
+    checkoutPayload,
     hasUnappliedDiscount,
     invalidItems.length,
     items,
     saveCheckoutDetails,
-    scheduledWindow,
-    selectedDateInput,
     stripePublishableKey
   ])
 
@@ -723,11 +731,11 @@ export function CheckoutForm({
           <Elements key={activePaymentIntent.clientSecret} options={stripeOptions} stripe={stripePromise}>
             <EmbeddedPaymentForm
               acceptedTerms={acceptedTerms}
+              checkoutPayload={checkoutPayload}
               clientSecret={activePaymentIntent.clientSecret}
               disabled={invalidItems.length > 0 || !checkoutDetailsAreValid}
               onError={setError}
-              orderId={activePaymentIntent.orderId}
-              token={activePaymentIntent.token}
+              paymentIntentId={activePaymentIntent.paymentIntentId}
             >
               <TermsCheckbox acceptedTerms={acceptedTerms} setAcceptedTerms={setAcceptedTerms} />
             </EmbeddedPaymentForm>
@@ -848,20 +856,20 @@ function TermsCheckbox({
 
 function EmbeddedPaymentForm({
   acceptedTerms,
+  checkoutPayload,
   children,
   clientSecret,
   disabled,
   onError,
-  orderId,
-  token
+  paymentIntentId
 }: {
   acceptedTerms: boolean
+  checkoutPayload: Record<string, unknown>
   children: ReactNode
   clientSecret: string
   disabled: boolean
   onError: (message: string) => void
-  orderId: string
-  token: string
+  paymentIntentId: string
 }) {
   const stripe = useStripe()
   const elements = useElements()
@@ -894,9 +902,30 @@ function EmbeddedPaymentForm({
     setConfirming(true)
     onError("")
 
-    const confirmationUrl = `${window.location.origin}/order-confirmation?order=${encodeURIComponent(orderId)}&token=${encodeURIComponent(token)}`
+    let submittedOrder: { clientSecret?: string; orderId?: string; token?: string }
+    try {
+      const response = await fetch("/api/checkout/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...checkoutPayload,
+          paymentIntentId
+        })
+      })
+      submittedOrder = await response.json()
+
+      if (!response.ok || !submittedOrder.orderId || !submittedOrder.token) {
+        throw new Error((submittedOrder as { error?: string }).error ?? "Could not submit your order.")
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not submit your order.")
+      setConfirming(false)
+      return
+    }
+
+    const confirmationUrl = `${window.location.origin}/order-confirmation?order=${encodeURIComponent(submittedOrder.orderId)}&token=${encodeURIComponent(submittedOrder.token)}`
     markCartForConfirmationClear()
-    const result = await stripe.confirmCardPayment(clientSecret, {
+    const result = await stripe.confirmCardPayment(submittedOrder.clientSecret ?? clientSecret, {
       payment_method: {
         billing_details: {
           address: {

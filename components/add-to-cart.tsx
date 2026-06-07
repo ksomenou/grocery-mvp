@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 
 import { peekCartDrawer } from "@/components/cart-drawer"
 import { CartItem, notifyCart, readCart, writeCart } from "@/lib/cart"
@@ -9,7 +9,7 @@ import { formatMoney, formatQuantity } from "@/lib/format"
 export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity"> }) {
   const [quantity, setQuantity] = useState(0)
   const [justAdded, setJustAdded] = useState(false)
-  const touchHandledRef = useRef(false)
+  const [isUpdating, setIsUpdating] = useState(false)
   const step = product.saleUnit === "LB" ? 0.5 : 1
 
   useEffect(() => {
@@ -28,10 +28,15 @@ export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity
   }, [product.id])
 
   function update(nextQuantity: number) {
+    if (isUpdating) {
+      return
+    }
+
     if (!Number.isFinite(nextQuantity)) {
       return
     }
 
+    setIsUpdating(true)
     const cart = readCart()
     const existing = cart.find((item) => item.id === product.id)
     const normalized = product.saleUnit === "LB" ? Math.round(nextQuantity * 2) / 2 : Math.round(nextQuantity)
@@ -51,20 +56,9 @@ export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity
       peekCartDrawer()
     }
     window.setTimeout(() => setJustAdded(false), 850)
-  }
-
-  function updateFromClick(nextQuantity: number) {
-    if (!touchHandledRef.current) {
-      update(nextQuantity)
-    }
-  }
-
-  function updateFromTouch(nextQuantity: number) {
-    touchHandledRef.current = true
-    update(nextQuantity)
     window.setTimeout(() => {
-      touchHandledRef.current = false
-    }, 350)
+      setIsUpdating(false)
+    }, 300)
   }
 
   if (product.stock <= 0) {
@@ -80,8 +74,11 @@ export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity
       <div className={`product-quantity ${justAdded ? "confirmed" : ""}`}>
         <button
           aria-label={`Decrease ${product.name}`}
-          onClick={() => updateFromClick(quantity - step)}
-          onTouchEnd={() => updateFromTouch(quantity - step)}
+          disabled={isUpdating}
+          onClick={(event) => {
+            event.stopPropagation()
+            update(quantity - step)
+          }}
           type="button"
         >
           -
@@ -89,9 +86,11 @@ export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity
         <strong>{formatQuantity(quantity, product.saleUnit)}</strong>
         <button
           aria-label={`Increase ${product.name}`}
-          disabled={quantity + step > product.stock}
-          onClick={() => updateFromClick(quantity + step)}
-          onTouchEnd={() => updateFromTouch(quantity + step)}
+          disabled={isUpdating || quantity + step > product.stock}
+          onClick={(event) => {
+            event.stopPropagation()
+            update(quantity + step)
+          }}
           type="button"
         >
           +
@@ -104,8 +103,11 @@ export function AddToCartButton({ product }: { product: Omit<CartItem, "quantity
   return (
     <button
       className={`button add-confirm-button ${justAdded ? "confirmed" : ""}`}
-      onClick={() => updateFromClick(Math.min(1, product.stock))}
-      onTouchEnd={() => updateFromTouch(Math.min(1, product.stock))}
+      disabled={isUpdating}
+      onClick={(event) => {
+        event.stopPropagation()
+        update(Math.min(1, product.stock))
+      }}
       type="button"
     >
       {justAdded ? "Added" : "🛒 Add to cart"}

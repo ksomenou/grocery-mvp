@@ -166,8 +166,8 @@ export default async function HomePage() {
           <span className="hero-eyebrow">Fresh African &amp; Caribbean products</span>
           <h1>International groceries delivered to your doorstep</h1>
           <div className="storefront-hero-badges" aria-label="Fulfillment options">
-            <span>{deliveryStatus.deliveryLabel}</span>
-            <span>{deliveryStatus.pickupLabel}</span>
+            <span>Local delivery available</span>
+            <span>Pickup available</span>
           </div>
           <div className="storefront-hours-card" aria-label="Business hours">
             <span>Open today</span>

@@ -73,7 +73,7 @@ export default async function AdminOrdersPage({
   
   const orderWhere = {
       ...(selectedStatus ? { status: selectedStatus } : {}),
-      ...(selectedPayment ? { paymentStatus: selectedPayment } : {}),
+      ...(selectedPayment ? { paymentStatus: selectedPayment } : { paymentStatus: "PAID" as const }),
       ...(selectedMethod ? { fulfillmentMethod: selectedMethod } : {}),
       ...(selectedDate && nextDate && !Number.isNaN(selectedDate.getTime()) ? { createdAt: { gte: selectedDate, lt: nextDate } } : {}),
       ...(query
@@ -157,7 +157,7 @@ export default async function AdminOrdersPage({
             <label>
               <span>Payment</span>
               <select className="select" defaultValue={selectedPayment} name="payment">
-                <option value="">All payments</option>
+                <option value="">Paid orders</option>
                 {paymentStatuses.map((value) => (
                   <option key={value} value={value}>{paymentStatusLabel(value)}</option>
                 ))}
