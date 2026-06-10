@@ -61,7 +61,9 @@ const productBaseSchema = z.object({
 })
 
 const createProductSchema = productBaseSchema
-const productSchema = productBaseSchema
+const productSchema = productBaseSchema.and(z.object({
+  isActive: z.boolean().optional()
+}))
 
 const categorySchema = z.object({
   name: z.string().min(2),
@@ -283,6 +285,7 @@ function readProductFormData(formData: FormData | null | undefined) {
     featuredBanner: formData.get("featuredBanner") === "on",
     featuredFresh: formData.get("featuredFresh") === "on",
     featuredPopular: formData.get("featuredPopular") === "on",
+    isActive: formData.get("isActive") === "true" ? true : formData.get("isActive") === "false" ? false : undefined,
     imageUrl: String(formData.get("imageUrl") ?? "").trim()
   }
 }
@@ -365,7 +368,7 @@ export async function createProduct(_state: ActionState = initialActionState, fo
 
 export async function updateProduct(productId: string, _state: ActionState = initialActionState, formData?: FormData): Promise<ActionState> {
   try {
-    await requirePermission("products:manage")
+    const user = await requirePermission("products:manage")
     const productForm = readProductFormData(formData)
     const data = productSchema.parse(productForm)
     const current = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
@@ -389,6 +392,7 @@ export async function updateProduct(productId: string, _state: ActionState = ini
         featuredBanner: data.featuredBanner,
         featuredFresh: data.featuredFresh,
         featuredPopular: data.featuredPopular,
+        ...(user.role === "ADMIN" && typeof data.isActive === "boolean" ? { isActive: data.isActive } : {}),
         imageUrl
       }
     })

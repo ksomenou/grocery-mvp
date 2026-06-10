@@ -99,7 +99,7 @@ export default async function AdminInventoryPage({
                 <div className="admin-product-summary">
                   <p className="muted">{titleCase(product.category.name)}</p>
                   <h2>{titleCase(product.name)}</h2>
-                  <p className="muted">{product.isActive ? "Active" : "Inactive"} storefront item</p>
+                  <span className={product.isActive ? "stock visibility-badge visible" : "stock-warning empty visibility-badge"}>{product.isActive ? "Visible" : "Hidden"}</span>
                   <LowStockBadge lowStockThreshold={product.lowStockThreshold} saleUnit={product.saleUnit} stock={product.stock} />
                 </div>
                 <div className="admin-price">

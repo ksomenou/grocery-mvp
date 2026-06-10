@@ -235,6 +235,7 @@ export default async function AdminProductsPage({
             activeCategory={activeCategory}
             activeQuery={activeQuery}
             activeStockFilter={activeStockFilter}
+            canChangeVisibility={user.role === "ADMIN"}
             canManageProducts={canManageProducts}
             canUpdateInventory={canUpdateInventory}
             categoryOptions={categoryOptions}

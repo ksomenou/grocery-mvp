@@ -51,6 +51,7 @@ export function AdminProductList({
   activeCategory = "",
   activeQuery = "",
   activeStockFilter = "all",
+  canChangeVisibility = false,
   canManageProducts = true,
   canUpdateInventory = true,
   categoryOptions,
@@ -60,6 +61,7 @@ export function AdminProductList({
   activeCategory?: string
   activeQuery?: string
   activeStockFilter?: string
+  canChangeVisibility?: boolean
   canManageProducts?: boolean
   canUpdateInventory?: boolean
   categoryOptions: string[]
@@ -130,7 +132,7 @@ export function AdminProductList({
                       <p className="muted">{titleCase(product.category.name)}</p>
                       <h2>{titleCase(product.name)}</h2>
                       <LowStockBadge lowStockThreshold={product.lowStockThreshold} saleUnit={product.saleUnit} stock={product.stock} />
-                      {!product.isActive ? <span className="stock-warning empty">Hidden</span> : null}
+                      <span className={product.isActive ? "stock visibility-badge visible" : "stock-warning empty visibility-badge"}>{product.isActive ? "Visible" : "Hidden"}</span>
                     </div>
                     <div className="admin-price">
                       {effectivePrice < product.priceCents ? <span className="original-price">{formatUnitPrice(product.priceCents, product.saleUnit)}</span> : null}
@@ -193,6 +195,15 @@ export function AdminProductList({
                         <input defaultChecked={product.taxable} name="taxable" type="checkbox" />
                         <span>Taxable item</span>
                       </label>
+                      {canChangeVisibility ? (
+                        <label className="form-field">
+                          <span>Storefront visibility</span>
+                          <select className="select" defaultValue={product.isActive ? "true" : "false"} name="isActive">
+                            <option value="true">Visible on storefront</option>
+                            <option value="false">Hidden from storefront</option>
+                          </select>
+                        </label>
+                      ) : null}
                       <fieldset className="feature-flags">
                         <legend>Homepage features</legend>
                         <label><input defaultChecked={product.featuredHome} name="featuredHome" type="checkbox" /> Recommended</label>
