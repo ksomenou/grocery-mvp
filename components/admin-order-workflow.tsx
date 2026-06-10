@@ -13,6 +13,7 @@ type FulfillmentStatus =
   | "OUT_FOR_DELIVERY"
   | "DELIVERED"
   | "CANCELLED"
+  | "PARTIALLY_REFUNDED"
   | "REFUNDED"
 
 type PaymentStatus = "PENDING" | "PAID" | "FAILED" | "REFUNDED"
@@ -30,6 +31,7 @@ const labels: Record<FulfillmentStatus, string> = {
   OUT_FOR_DELIVERY: "Out for delivery",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
+  PARTIALLY_REFUNDED: "Partially refunded",
   REFUNDED: "Refunded"
 }
 
@@ -43,7 +45,7 @@ const actionLabels: Partial<Record<FulfillmentStatus, string>> = {
 }
 
 function nextStatuses(status: FulfillmentStatus, paymentStatus: PaymentStatus, method: FulfillmentMethod) {
-  if (status === "CANCELLED" || status === "REFUNDED" || status === "DELIVERED") {
+  if (status === "CANCELLED" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED" || status === "DELIVERED") {
     return []
   }
 
@@ -78,7 +80,7 @@ export function FulfillmentTimeline({
     ? (["RECEIVED", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED"] as FulfillmentStatus[])
     : flow
   const activeIndex = steps.indexOf(status)
-  const isTerminal = status === "CANCELLED" || status === "REFUNDED"
+  const isTerminal = status === "CANCELLED" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED"
 
   return (
     <div className={`fulfillment-timeline ${isTerminal ? "terminal" : ""}`} aria-label="Fulfillment progress">
@@ -119,7 +121,7 @@ export function OrderWorkflowActions({
   const actions = useMemo(() => nextStatuses(currentStatus, currentPaymentStatus, fulfillmentMethod), [currentPaymentStatus, currentStatus, fulfillmentMethod])
 
   useEffect(() => {
-    if (currentStatus === "DELIVERED" || currentStatus === "CANCELLED" || currentStatus === "REFUNDED") {
+    if (currentStatus === "DELIVERED" || currentStatus === "CANCELLED" || currentStatus === "PARTIALLY_REFUNDED" || currentStatus === "REFUNDED") {
       return
     }
 

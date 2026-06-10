@@ -4,9 +4,12 @@ import type { Prisma } from "@prisma/client"
 import { AdminNav } from "@/components/admin-nav"
 import { AdminProductList } from "@/components/admin-product-list"
 import { AdminActionForm, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
+import { PermissionDenied } from "@/components/permission-denied"
 import { ProductCategoryField } from "@/components/product-category-field"
 import { createProduct } from "@/lib/actions"
+import { requirePermission } from "@/lib/admin-auth"
 import { defaultCategoryNames } from "@/lib/default-categories"
+import { hasPermission } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 import { createQueryTimer } from "@/lib/query-timing"
 
@@ -97,6 +100,15 @@ export default async function AdminProductsPage({
 }: {
   searchParams: Promise<{ category?: string; page?: string; q?: string; stock?: string }>
 }) {
+  let user: Awaited<ReturnType<typeof requirePermission>>
+  try {
+    user = await requirePermission("products:view")
+  } catch {
+    return <PermissionDenied />
+  }
+
+  const canManageProducts = hasPermission(user.role, "products:manage")
+  const canUpdateInventory = hasPermission(user.role, "inventory:update")
   const { category, page, q, stock } = await searchParams
   const currentPage = Math.max(1, Number(page) || 1)
   const activeQuery = typeof q === "string" ? q.trim() : ""
@@ -151,8 +163,9 @@ export default async function AdminProductsPage({
       </div>
 
       <div className="admin-shell">
-        <section className="panel admin-sticky">
-          <AdminActionForm action={createProduct}>
+        {canManageProducts ? (
+          <section className="panel admin-sticky">
+            <AdminActionForm action={createProduct}>
             <h2 style={{ margin: 0 }}>Add product</h2>
             <ImagePreviewInput label="Product image" uploadEndpoint="/api/admin/uploads/product-image" />
             <label className="form-field">
@@ -213,14 +226,17 @@ export default async function AdminProductsPage({
               <label><input name="featuredPopular" type="checkbox" /> Popular near you</label>
             </fieldset>
             <SubmitButton pendingLabel="Adding...">Add product</SubmitButton>
-          </AdminActionForm>
-        </section>
+            </AdminActionForm>
+          </section>
+        ) : null}
 
         <div className="admin-products-list-column">
           <AdminProductList
             activeCategory={activeCategory}
             activeQuery={activeQuery}
             activeStockFilter={activeStockFilter}
+            canManageProducts={canManageProducts}
+            canUpdateInventory={canUpdateInventory}
             categoryOptions={categoryOptions}
             products={visibleProducts}
           />

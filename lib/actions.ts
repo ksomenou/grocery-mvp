@@ -6,7 +6,7 @@ import { writeFile } from "node:fs/promises"
 import path from "node:path"
 import { z } from "zod"
 
-import { requireAdmin } from "@/lib/admin-auth"
+import { requirePermission } from "@/lib/admin-auth"
 import { normalizeDiscountCode } from "@/lib/discounts"
 import { slugify } from "@/lib/format"
 import { notifyOrderStatusChanged } from "@/lib/notifications"
@@ -323,7 +323,7 @@ function readImageFile(formData: FormData | null | undefined) {
 
 export async function createProduct(_state: ActionState = initialActionState, formData?: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("products:manage")
     const productForm = readProductFormData(formData)
     const data = createProductSchema.parse(productForm)
     const imageUrl = productForm.imageUrl || await saveImage(readImageFile(formData))
@@ -365,7 +365,7 @@ export async function createProduct(_state: ActionState = initialActionState, fo
 
 export async function updateProduct(productId: string, _state: ActionState = initialActionState, formData?: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("products:manage")
     const productForm = readProductFormData(formData)
     const data = productSchema.parse(productForm)
     const current = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
@@ -434,7 +434,7 @@ export async function updateProduct(productId: string, _state: ActionState = ini
 
 export async function deleteProduct(productId: string, _state: ActionState = initialActionState): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("products:manage")
     await prisma.product.update({ where: { id: productId }, data: { isActive: false } })
     revalidateAdmin()
     return { ok: true, message: "Product removed from the storefront." }
@@ -445,7 +445,7 @@ export async function deleteProduct(productId: string, _state: ActionState = ini
 
 export async function createCategory(_state: ActionState = initialActionState, formData: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("categories:manage")
     const data = categorySchema.parse(Object.fromEntries(formData))
     const imageUrl = await saveImage(formData.get("image") as File | null)
     const slug = `${slugify(data.name)}-${Date.now().toString(36)}`
@@ -468,7 +468,7 @@ export async function createCategory(_state: ActionState = initialActionState, f
 
 export async function updateCategory(categoryId: string, _state: ActionState = initialActionState, formData: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("categories:manage")
     const data = categorySchema.parse(Object.fromEntries(formData))
     const current = await prisma.category.findUniqueOrThrow({ where: { id: categoryId } })
     const imageUrl = await saveImage(formData.get("image") as File | null, current.imageUrl)
@@ -491,7 +491,7 @@ export async function updateCategory(categoryId: string, _state: ActionState = i
 
 export async function deleteCategory(categoryId: string, _state: ActionState = initialActionState): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("categories:manage")
     const activeProducts = await prisma.product.count({ where: { categoryId, isActive: true } })
     if (activeProducts > 0) {
       return { ok: false, message: "Move or delete products in this category first." }
@@ -557,7 +557,7 @@ function readDiscountCodeFormData(formData: FormData | null | undefined) {
 
 export async function createDiscountCode(_state: ActionState = initialActionState, formData?: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("discounts:manage")
     const data = discountCodeSchema.parse(readDiscountCodeFormData(formData))
     const product = await validateDiscountProduct(data)
 
@@ -597,7 +597,7 @@ export async function createDiscountCode(_state: ActionState = initialActionStat
 
 export async function disableDiscountCode(discountId: string, _state: ActionState = initialActionState): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("discounts:manage")
     await prisma.discountCode.update({
       where: { id: discountId },
       data: { isActive: false }
@@ -611,7 +611,7 @@ export async function disableDiscountCode(discountId: string, _state: ActionStat
 
 export async function enableDiscountCode(discountId: string, _state: ActionState = initialActionState): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("discounts:manage")
     await prisma.discountCode.update({
       where: { id: discountId },
       data: { isActive: true }
@@ -625,7 +625,7 @@ export async function enableDiscountCode(discountId: string, _state: ActionState
 
 export async function deleteDiscountCode(discountId: string, _state: ActionState = initialActionState): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("discounts:manage")
     await prisma.discountCode.update({
       where: { id: discountId },
       data: { isActive: false }
@@ -639,7 +639,7 @@ export async function deleteDiscountCode(discountId: string, _state: ActionState
 
 export async function updateDiscountCode(discountId: string, _state: ActionState = initialActionState, formData?: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("discounts:manage")
     const data = discountCodeSchema.parse(readDiscountCodeFormData(formData))
     const product = await validateDiscountProduct(data)
 
@@ -679,7 +679,7 @@ export async function updateDiscountCode(discountId: string, _state: ActionState
 
 export async function updateInventory(productId: string, _state: ActionState = initialActionState, formData?: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    const user = await requirePermission("inventory:update")
     if (!(formData instanceof FormData)) {
       throw new Error("Inventory form was not submitted correctly.")
     }
@@ -691,6 +691,9 @@ export async function updateInventory(productId: string, _state: ActionState = i
     })
     const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
     const thresholdChanged = data.lowStockThreshold !== product.lowStockThreshold
+    if (thresholdChanged && user.role !== "ADMIN") {
+      throw new Error("You do not have permission to perform this action.")
+    }
     if (data.quantity === undefined && !thresholdChanged) {
       throw new Error("Enter a stock quantity or change the low stock threshold.")
     }
@@ -746,7 +749,7 @@ export async function updateInventory(productId: string, _state: ActionState = i
 
 export async function updateOrderStatus(orderId: string, _state: ActionState = initialActionState, formData: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("orders:update")
     const status = z.string().parse(formData.get("status"))
     if (!isFulfillmentStatus(status) || !adminOrderStatuses.includes(status)) {
       throw new Error("That order status cannot be selected from the admin dashboard.")
@@ -825,7 +828,7 @@ export async function updateOrderStatus(orderId: string, _state: ActionState = i
 
 export async function deleteTestOrders(_state: ActionState = initialActionState, _formData?: FormData): Promise<ActionState> {
   try {
-    await requireAdmin()
+    await requirePermission("admin-users:manage")
     const where = testOrderCleanupWhere()
     const orders = await prisma.order.findMany({
       where,

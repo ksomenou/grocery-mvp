@@ -1,6 +1,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { unstable_cache } from "next/cache"
+import { Prisma } from "@prisma/client"
 
 import { CategoryCarousel } from "@/components/category-carousel"
 import { HomeHeroCarousel } from "@/components/home-hero-carousel"
@@ -72,7 +73,7 @@ const featuredShelves = [
 
 const getHomepageData = unstable_cache(
   async () => {
-    const [categories, activeProductCount, products] = await Promise.all([
+    const [categories, activeProductCount, products, featuredHeroProducts] = await Promise.all([
       prisma.category.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true, slug: true }
@@ -83,20 +84,58 @@ const getHomepageData = unstable_cache(
         orderBy: [{ featuredBanner: "desc" }, { featuredPopular: "desc" }, { featuredFresh: "desc" }, { featuredHome: "desc" }, { updatedAt: "desc" }],
         select: homepageProductSelect,
         take: 36
+      }),
+      prisma.product.findMany({
+        where: {
+          isActive: true,
+          stock: { gt: 0 },
+          OR: [
+            { featuredBanner: true },
+            { featuredHome: true },
+            { featuredPopular: true },
+            { featuredFresh: true }
+          ]
+        },
+        orderBy: [{ featuredBanner: "desc" }, { featuredHome: "desc" }, { featuredPopular: "desc" }, { featuredFresh: "desc" }, { updatedAt: "desc" }],
+        select: homepageProductSelect,
+        take: 50
       })
     ])
 
-    return { activeProductCount, categories, products }
+    const featuredIds = featuredHeroProducts.map((product) => product.id)
+    const remainingHeroSlots = Math.max(0, 50 - featuredHeroProducts.length)
+    const randomHeroIds = remainingHeroSlots > 0
+      ? await prisma.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`
+          SELECT "id"
+          FROM "Product"
+          WHERE "isActive" = true
+            AND "stock" > 0
+            ${featuredIds.length > 0 ? Prisma.sql`AND "id" NOT IN (${Prisma.join(featuredIds)})` : Prisma.empty}
+          ORDER BY RANDOM()
+          LIMIT ${remainingHeroSlots}
+        `
+      )
+      : []
+    const randomHeroProducts = randomHeroIds.length > 0
+      ? await prisma.product.findMany({
+        where: { id: { in: randomHeroIds.map((product) => product.id) } },
+        select: homepageProductSelect
+      })
+      : []
+    const randomHeroProductOrder = new Map(randomHeroIds.map((product, index) => [product.id, index]))
+    randomHeroProducts.sort((a, b) => (randomHeroProductOrder.get(a.id) ?? 0) - (randomHeroProductOrder.get(b.id) ?? 0))
+
+    return { activeProductCount, categories, heroPoolProducts: [...featuredHeroProducts, ...randomHeroProducts], products }
   },
-  ["homepage-products-v2"],
+  ["homepage-products-v3"],
   { revalidate: 300, tags: ["homepage"] }
 )
 
 export default async function HomePage() {
   const deliveryStatus = deliveryStatusForDate()
-  const { categories, activeProductCount, products } = await getHomepageData()
+  const { categories, activeProductCount, heroPoolProducts, products } = await getHomepageData()
   const fallbackProducts = products.slice(0, 8)
-  const bannerProducts = products.filter((product) => product.featuredBanner).slice(0, 4)
   const freshFeatured = products.filter((product) => product.stock > 0 && product.featuredFresh).slice(0, 8)
   const popularFeatured = products.filter((product) => product.featuredPopular).slice(0, 8)
   const homeFeatured = products.filter((product) => product.featuredHome).slice(0, 8)
@@ -104,7 +143,7 @@ export default async function HomePage() {
   const popularNearYou = popularFeatured.length > 0 ? popularFeatured : fallbackProducts
   const freshToday = freshFeatured.length > 0 ? freshFeatured : fallbackProducts.filter((product) => product.stock > 0)
   const recommended = homeFeatured.length > 0 ? homeFeatured : fallbackProducts
-  const heroProducts = (bannerProducts.length > 0 ? bannerProducts : fallbackProducts).map((product) => ({
+  const heroProducts = (heroPoolProducts.length > 0 ? heroPoolProducts : fallbackProducts).slice(0, 50).map((product) => ({
     id: product.id,
     name: product.name,
     slug: product.slug,

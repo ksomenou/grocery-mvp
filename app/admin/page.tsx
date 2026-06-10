@@ -3,6 +3,8 @@ import { unstable_cache } from "next/cache"
 
 import { AdminNav } from "@/components/admin-nav"
 import { AdminNewOrderNotifier } from "@/components/admin-new-order-notifier"
+import { PermissionDenied } from "@/components/permission-denied"
+import { requirePermission } from "@/lib/admin-auth"
 import { formatMoney, titleCase } from "@/lib/format"
 import { getRecentOperationalEvents, operationalEventIcon, operationalEventTone } from "@/lib/operational-events"
 import { orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
@@ -95,6 +97,12 @@ function minutesAgo(date: Date) {
 }
 
 export default async function AdminPage() {
+  try {
+    await requirePermission("dashboard")
+  } catch {
+    return <PermissionDenied />
+  }
+
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const weekStart = new Date(today)

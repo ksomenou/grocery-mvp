@@ -19,6 +19,7 @@ export const metadata: Metadata = {
 
 function customerOrderStatusLabel(status: string) {
   if (status === "CANCELLED") return "Order cancelled"
+  if (status === "PARTIALLY_REFUNDED") return "Partial refund processed"
   if (status === "REFUNDED") return "Order refunded"
   if (status === "DELIVERED") return "Completed"
   if (status === "PREPARING") return "Preparing"
@@ -136,7 +137,7 @@ export default async function OrderConfirmationPage({
                 <CustomerOrderStatus
                   initial={{
                     fulfillmentMethod: order.fulfillmentMethod,
-                    isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "REFUNDED",
+                    isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "PARTIALLY_REFUNDED" || order.status === "REFUNDED",
                     paymentLabel: customerPaymentStatusLabel(order.paymentStatus, order.fulfillmentMethod),
                     paymentStatus: order.paymentStatus,
                     schedule,

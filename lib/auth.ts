@@ -5,6 +5,7 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { z } from "zod"
 
+import { hasPermission, isAdminRole, loginRedirectDestination, type AdminPermission } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 import { encodeSessionPayload, sessionCookie, signSessionValue, verifySessionCookie, type SessionPayload } from "@/lib/session"
 
@@ -50,16 +51,29 @@ export async function getCurrentUser() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.id },
-    select: { email: true, id: true, name: true, role: true }
+    select: { email: true, id: true, isActive: true, name: true, role: true }
   })
+
+  if (!user?.isActive) {
+    return null
+  }
 
   return user
 }
 
 export async function requireAdmin() {
   const user = await getCurrentUser()
-  if (!user || user.role !== "ADMIN") {
-    throw new Error("Admin access is required.")
+  if (!user || !isAdminRole(user.role)) {
+    throw new Error("You do not have permission to access this page.")
+  }
+
+  return user
+}
+
+export async function requirePermission(permission: AdminPermission) {
+  const user = await requireAdmin()
+  if (!hasPermission(user.role, permission)) {
+    throw new Error("You do not have permission to perform this action.")
   }
 
   return user
@@ -78,15 +92,18 @@ export async function loginUser(formData: FormData) {
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } })
   const valid = user ? await bcrypt.compare(parsed.data.password, user.passwordHash) : false
-  if (!user || !valid) {
+  if (!user || !valid || !user.isActive) {
     redirect("/login?error=invalid")
   }
 
   await createSession({ email: user.email, id: user.id, name: user.name, role: user.role })
-  if (user.role === "ADMIN") {
-    redirect(next.startsWith("/admin") ? next : "/admin")
+  if (isAdminRole(user.role)) {
+    const destination = loginRedirectDestination(user.role, next)
+    console.info("[login redirect]", { destination, next, role: user.role })
+    redirect(destination)
   }
 
+  console.info("[login redirect]", { destination: next && !next.startsWith("/admin") ? next : "/", next, role: user.role })
   redirect(next && !next.startsWith("/admin") ? next : "/")
 }
 

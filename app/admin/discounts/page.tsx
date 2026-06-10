@@ -7,8 +7,10 @@ import { DiscountCodeInput } from "@/components/discount-code-input"
 import { DiscountFormSubmit } from "@/components/discount-form-submit"
 import { DiscountScopeFields } from "@/components/discount-scope-fields"
 import { DiscountSortSelect } from "@/components/discount-sort-select"
+import { PermissionDenied } from "@/components/permission-denied"
 import { ScrollIntoView } from "@/components/scroll-into-view"
 import { createDiscountCode, deleteDiscountCode, disableDiscountCode, enableDiscountCode, updateDiscountCode } from "@/lib/actions"
+import { requirePermission } from "@/lib/admin-auth"
 import { discountCodeLabel } from "@/lib/discounts"
 import { formatMoney, titleCase } from "@/lib/format"
 import { prisma } from "@/lib/prisma"
@@ -105,6 +107,12 @@ export default async function AdminDiscountsPage({
 }: {
   searchParams?: Promise<{ edit?: string; filter?: string; sort?: string }>
 }) {
+  try {
+    await requirePermission("discounts:manage")
+  } catch {
+    return <PermissionDenied />
+  }
+
   const params = await searchParams
   const sort = params?.sort ?? "newest"
   const filter = params?.filter ?? "all"
@@ -163,7 +171,7 @@ export default async function AdminDiscountsPage({
         <p className="admin-kicker">Store admin</p>
         <h1>Discounts</h1>
         <p>Create and manage grocery checkout discount codes.</p>
-        <AdminNav active="dashboard" />
+        <AdminNav active="discounts" />
       </div>
 
       <div className="admin-shell admin-discount-shell">

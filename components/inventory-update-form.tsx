@@ -8,9 +8,11 @@ import { updateInventory, type ActionState } from "@/lib/actions"
 const emptyState: ActionState = { ok: false, message: "" }
 
 export function InventoryUpdateForm({
+  canEditThreshold = true,
   currentThreshold,
   productId
 }: {
+  canEditThreshold?: boolean
   currentThreshold: number
   productId: string
 }) {
@@ -29,7 +31,7 @@ export function InventoryUpdateForm({
   const thresholdIsValid = threshold.trim().length > 0 && Number.isFinite(thresholdValue) && thresholdValue >= 0
   const thresholdChanged = thresholdIsValid && thresholdValue !== currentThreshold
   const hasInvalidQuantity = !quantityIsBlank && !quantityIsValid
-  const canSubmit = thresholdIsValid && !hasInvalidQuantity && (quantityIsValid || thresholdChanged)
+  const canSubmit = thresholdIsValid && !hasInvalidQuantity && (quantityIsValid || (canEditThreshold && thresholdChanged))
 
   return (
     <>
@@ -54,19 +56,23 @@ export function InventoryUpdateForm({
             value={quantity}
           />
         </label>
-        <label className="form-field">
-          <span>Low stock threshold</span>
-          <input
-            className="field"
-            min="0"
-            name="lowStockThreshold"
-            onChange={(event) => setThreshold(event.target.value)}
-            required
-            step="0.01"
-            type="number"
-            value={threshold}
-          />
-        </label>
+        {canEditThreshold ? (
+          <label className="form-field">
+            <span>Low stock threshold</span>
+            <input
+              className="field"
+              min="0"
+              name="lowStockThreshold"
+              onChange={(event) => setThreshold(event.target.value)}
+              required
+              step="0.01"
+              type="number"
+              value={threshold}
+            />
+          </label>
+        ) : (
+          <input name="lowStockThreshold" type="hidden" value={currentThreshold} />
+        )}
         <button className="button secondary" disabled={!canSubmit} type="submit">
           Update stock
         </button>

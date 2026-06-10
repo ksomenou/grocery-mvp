@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server"
 
-import { requireAdmin } from "@/lib/admin-auth"
+import { requirePermission } from "@/lib/admin-auth"
 import { uploadProductImageToR2 } from "@/lib/r2"
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("products:manage")
 
     const formData = await request.formData()
     const file = formData.get("image")

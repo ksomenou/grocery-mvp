@@ -13,6 +13,7 @@ import { SearchBox } from "@/components/search-box"
 import { SiteFooter } from "@/components/site-footer"
 import { StickyCartButton } from "@/components/sticky-cart-button"
 import { getCurrentUser, logoutUser } from "@/lib/auth"
+import { isAdminRole } from "@/lib/permissions"
 import { storeName } from "@/lib/store"
 
 import "./globals.css"
@@ -51,6 +52,8 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const user = await getCurrentUser()
+  const adminHref = user?.role === "ORDER_STAFF" ? "/admin/orders" : user?.role === "INVENTORY_STAFF" ? "/admin/inventory" : "/admin"
+  const adminLabel = user?.role === "ORDER_STAFF" ? "Orders" : user?.role === "INVENTORY_STAFF" ? "Inventory" : "Admin"
 
   return (
     <html lang="en">
@@ -74,7 +77,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <Link href="/products">Products</Link>
               {user ? (
                 <>
-                  {user.role === "ADMIN" ? <Link href="/admin" prefetch={false}>Admin</Link> : <Link href="/account">Account</Link>}
+                  {isAdminRole(user.role) ? <Link href={adminHref} prefetch={false}>{adminLabel}</Link> : <Link href="/account">Account</Link>}
                   <form action={logoutUser}>
                     <button type="submit">Logout</button>
                   </form>

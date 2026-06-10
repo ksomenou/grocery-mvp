@@ -51,6 +51,8 @@ export function AdminProductList({
   activeCategory = "",
   activeQuery = "",
   activeStockFilter = "all",
+  canManageProducts = true,
+  canUpdateInventory = true,
   categoryOptions,
   productCount,
   products
@@ -58,6 +60,8 @@ export function AdminProductList({
   activeCategory?: string
   activeQuery?: string
   activeStockFilter?: string
+  canManageProducts?: boolean
+  canUpdateInventory?: boolean
   categoryOptions: string[]
   productCount?: number
   products: AdminProduct[]
@@ -134,9 +138,10 @@ export function AdminProductList({
                       {discountBadge ? <small>{discountBadge}</small> : null}
                     </div>
                   </div>
-                  <details className="admin-details">
-                    <summary className="button secondary">Edit product</summary>
-                    <AdminActionForm action={updateProduct.bind(null, product.id)}>
+                  {canManageProducts ? (
+                    <details className="admin-details">
+                      <summary className="button secondary">Edit product</summary>
+                      <AdminActionForm action={updateProduct.bind(null, product.id)}>
                       <ImagePreviewInput currentImage={product.imageUrl} label="Product image" uploadEndpoint="/api/admin/uploads/product-image" />
                       <label className="form-field">
                         <span>Product name</span>
@@ -195,28 +200,35 @@ export function AdminProductList({
                         <label><input defaultChecked={product.featuredFresh} name="featuredFresh" type="checkbox" /> Fresh today</label>
                         <label><input defaultChecked={product.featuredPopular} name="featuredPopular" type="checkbox" /> Popular near you</label>
                       </fieldset>
-                      <SubmitButton pendingLabel="Saving..." variant="secondary">Save changes</SubmitButton>
-                    </AdminActionForm>
-                  </details>
+                        <SubmitButton pendingLabel="Saving..." variant="secondary">Save changes</SubmitButton>
+                      </AdminActionForm>
+                    </details>
+                  ) : null}
 
                   <div className="admin-card-actions">
-                    <AdminActionForm action={updateInventory.bind(null, product.id)} className="quick-inventory-form">
-                      <input name="mode" type="hidden" value="SET" />
-                      <input name="quantity" type="hidden" value={Math.max(0, Number((product.stock - (product.saleUnit === "LB" ? 0.5 : 1)).toFixed(2)))} />
-                      <input name="lowStockThreshold" type="hidden" value={product.lowStockThreshold} />
-                      <button aria-label={`Reduce ${product.name} inventory`} className="copy-button" disabled={product.stock <= 0} type="submit">-</button>
-                    </AdminActionForm>
-                    <AdminActionForm action={updateInventory.bind(null, product.id)} className="quick-inventory-form">
-                      <input name="mode" type="hidden" value="ADD" />
-                      <input name="quantity" type="hidden" value={product.saleUnit === "LB" ? 0.5 : 1} />
-                      <input name="lowStockThreshold" type="hidden" value={product.lowStockThreshold} />
-                      <button aria-label={`Increase ${product.name} inventory`} className="copy-button" type="submit">+</button>
-                    </AdminActionForm>
-                    <AdminDeleteForm
-                      action={deleteProduct.bind(null, product.id)}
-                      confirmMessage={`Delete ${titleCase(product.name)} from the storefront?`}
-                      label="Delete"
-                    />
+                    {canUpdateInventory ? (
+                      <>
+                        <AdminActionForm action={updateInventory.bind(null, product.id)} className="quick-inventory-form">
+                          <input name="mode" type="hidden" value="SET" />
+                          <input name="quantity" type="hidden" value={Math.max(0, Number((product.stock - (product.saleUnit === "LB" ? 0.5 : 1)).toFixed(2)))} />
+                          <input name="lowStockThreshold" type="hidden" value={product.lowStockThreshold} />
+                          <button aria-label={`Reduce ${product.name} inventory`} className="copy-button" disabled={product.stock <= 0} type="submit">-</button>
+                        </AdminActionForm>
+                        <AdminActionForm action={updateInventory.bind(null, product.id)} className="quick-inventory-form">
+                          <input name="mode" type="hidden" value="ADD" />
+                          <input name="quantity" type="hidden" value={product.saleUnit === "LB" ? 0.5 : 1} />
+                          <input name="lowStockThreshold" type="hidden" value={product.lowStockThreshold} />
+                          <button aria-label={`Increase ${product.name} inventory`} className="copy-button" type="submit">+</button>
+                        </AdminActionForm>
+                      </>
+                    ) : null}
+                    {canManageProducts ? (
+                      <AdminDeleteForm
+                        action={deleteProduct.bind(null, product.id)}
+                        confirmMessage={`Delete ${titleCase(product.name)} from the storefront?`}
+                        label="Delete"
+                      />
+                    ) : null}
                   </div>
                 </div>
               </article>

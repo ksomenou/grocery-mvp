@@ -14,6 +14,7 @@ export const adminOrderStatuses = [
   "OUT_FOR_DELIVERY",
   "DELIVERED",
   "CANCELLED",
+  "PARTIALLY_REFUNDED",
   "REFUNDED"
 ] as const
 
@@ -27,6 +28,7 @@ const allowedTransitions: Record<FulfillmentStatus, FulfillmentStatus[]> = {
   OUT_FOR_DELIVERY: ["DELIVERED"],
   DELIVERED: [],
   CANCELLED: [],
+  PARTIALLY_REFUNDED: [],
   REFUNDED: []
 }
 

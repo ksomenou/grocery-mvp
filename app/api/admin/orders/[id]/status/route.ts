@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { requireAdmin } from "@/lib/admin-auth"
+import { requirePermission } from "@/lib/admin-auth"
 import { orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
 
@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin()
+    await requirePermission("orders:view")
     const { id } = await params
 
     if (!id) {
@@ -42,6 +42,6 @@ export async function GET(
       updatedAt: order.updatedAt.toISOString()
     })
   } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return NextResponse.json({ error: "You do not have permission to perform this action." }, { status: 401 })
   }
 }

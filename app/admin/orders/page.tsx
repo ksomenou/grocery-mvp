@@ -4,6 +4,8 @@ import { AdminNav } from "@/components/admin-nav"
 import { MobileOrderFilters } from "@/components/mobile-order-filters"
 import { EmptyState } from "@/components/admin-static-ui"
 import { CopyButton } from "@/components/copy-button"
+import { PermissionDenied } from "@/components/permission-denied"
+import { requirePermission } from "@/lib/admin-auth"
 import { formatMoney } from "@/lib/format"
 import { adminOrderStatuses, isFulfillmentStatus, orderStatusLabel, paymentStatusLabel } from "@/lib/orders"
 import { prisma } from "@/lib/prisma"
@@ -48,6 +50,12 @@ export default async function AdminOrdersPage({
 }: {
   searchParams: Promise<{ date?: string; method?: string; page?: string; payment?: string; q?: string; status?: string }>
 }) {
+  try {
+    await requirePermission("orders:view")
+  } catch {
+    return <PermissionDenied />
+  }
+
   const { date, method, page, payment, q, status } = await searchParams
   const currentPage = Math.max(1, Number(page) || 1)
   const paymentStatuses = ["PENDING", "PAID", "FAILED", "REFUNDED"] as const

@@ -68,7 +68,7 @@ export default async function AccountOrdersPage({
                       <CustomerOrderStatus
                         initial={{
                           fulfillmentMethod: order.fulfillmentMethod,
-                          isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "REFUNDED",
+                          isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "PARTIALLY_REFUNDED" || order.status === "REFUNDED",
                           paymentLabel: paymentStatusLabel(order.paymentStatus),
                           paymentStatus: order.paymentStatus,
                           schedule,

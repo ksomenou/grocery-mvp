@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 
 type MobileNavMenuProps = {
   logoutAction: () => Promise<void>
-  userRole: "ADMIN" | "CUSTOMER" | null
+  userRole: "ADMIN" | "ORDER_STAFF" | "INVENTORY_STAFF" | "CUSTOMER" | null
 }
 
 const guestLinks = [
@@ -27,7 +27,17 @@ const customerLinks = [
 const adminLinks = [
   { href: "/admin", label: "Admin Dashboard" },
   { href: "/admin/products", label: "Products" },
+  { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/users", label: "Admin Users" }
+]
+
+const orderStaffLinks = [
   { href: "/admin/orders", label: "Orders" }
+]
+
+const inventoryStaffLinks = [
+  { href: "/admin/products", label: "Products" },
+  { href: "/admin/inventory", label: "Inventory" }
 ]
 
 const categoryLinks = [
@@ -41,7 +51,15 @@ const categoryLinks = [
 
 export function MobileNavMenu({ logoutAction, userRole }: MobileNavMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const mainLinks = userRole === "ADMIN" ? adminLinks : userRole === "CUSTOMER" ? customerLinks : guestLinks
+  const mainLinks = userRole === "ADMIN"
+    ? adminLinks
+    : userRole === "ORDER_STAFF"
+      ? orderStaffLinks
+      : userRole === "INVENTORY_STAFF"
+        ? inventoryStaffLinks
+        : userRole === "CUSTOMER"
+          ? customerLinks
+          : guestLinks
 
   useEffect(() => {
     document.body.classList.toggle("mobile-menu-open", isOpen)

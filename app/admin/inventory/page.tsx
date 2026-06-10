@@ -4,7 +4,10 @@ import Link from "next/link"
 import { AdminNav } from "@/components/admin-nav"
 import { EmptyState, LowStockBadge } from "@/components/admin-static-ui"
 import { InventoryUpdateForm } from "@/components/inventory-update-form"
+import { PermissionDenied } from "@/components/permission-denied"
+import { requirePermission } from "@/lib/admin-auth"
 import { formatQuantity, titleCase } from "@/lib/format"
+import { hasPermission } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -14,6 +17,14 @@ export default async function AdminInventoryPage({
 }: {
   searchParams: Promise<{ filter?: string; q?: string }>
 }) {
+  let user: Awaited<ReturnType<typeof requirePermission>>
+  try {
+    user = await requirePermission("inventory:update")
+  } catch {
+    return <PermissionDenied />
+  }
+  const canManageProducts = hasPermission(user.role, "products:manage")
+
   const { filter, q } = await searchParams
   const query = q?.trim()
   const products = await prisma.product.findMany({
@@ -48,8 +59,8 @@ export default async function AdminInventoryPage({
         <p className="admin-kicker">Store admin</p>
         <h1>Inventory</h1>
         <p>Restock products, monitor low stock, and keep grocery availability accurate.</p>
-        <Link className="button secondary admin-header-action" href="/admin/products" prefetch={false}>Add product</Link>
-        <AdminNav active="dashboard" />
+        {canManageProducts ? <Link className="button secondary admin-header-action" href="/admin/products" prefetch={false}>Add product</Link> : null}
+        <AdminNav active="inventory" />
       </div>
 
       <section className="admin-metrics dense">
@@ -96,7 +107,7 @@ export default async function AdminInventoryPage({
                   <small>Threshold {formatQuantity(product.lowStockThreshold, product.saleUnit)}</small>
                 </div>
               </div>
-              <InventoryUpdateForm currentThreshold={product.lowStockThreshold} productId={product.id} />
+              <InventoryUpdateForm canEditThreshold={canManageProducts} currentThreshold={product.lowStockThreshold} productId={product.id} />
             </div>
           </article>
         ))}

@@ -8,6 +8,15 @@ import { formatSchedule } from "@/lib/scheduling"
 import { storeName } from "@/lib/store"
 
 type OrderWithItems = Order & { items: OrderItem[] }
+type RefundNoticeOrder = OrderWithItems & {
+  refunds: RefundNoticeRow[]
+}
+
+type RefundNoticeRow = {
+  refundAmountCents: number
+  refundReason: string
+  refundedAt: Date
+}
 
 function configured(value?: string | null) {
   return Boolean(value && value.trim() && !value.includes("replace_me") && !value.includes("change-me"))
@@ -274,6 +283,60 @@ async function sendCustomerStatusEmail(order: OrderWithItems) {
   logInfo("Customer status update email sent.", { orderId: order.id, status: order.status, to })
 }
 
+function customerRefundText(order: RefundNoticeOrder, refundAmountCents: number, refundReason: string) {
+  const schedule = formatSchedule(order.scheduledDate, order.scheduledWindow)
+  const totalRefunded = order.refunds.reduce((sum, refund) => sum + refund.refundAmountCents, 0)
+
+  return [
+    `${storeName} refund confirmation`,
+    "",
+    `Order ID: ${order.id}`,
+    `Refund amount: ${formatMoney(refundAmountCents)}`,
+    `Total refunded for this order: ${formatMoney(totalRefunded)}`,
+    `Order total: ${formatMoney(order.totalCents)}`,
+    schedule ? `Schedule: ${schedule}` : null,
+    refundReason ? `Reason: ${refundReason}` : null,
+    "",
+    "Approved refunds are sent back to the original payment method. Your bank or payment provider may take 5-10 business days to post the refund."
+  ].filter(Boolean).join("\n")
+}
+
+async function sendCustomerRefundEmail(order: RefundNoticeOrder, refundAmountCents: number, refundReason: string) {
+  const apiKey = process.env.RESEND_API_KEY
+  const from = process.env.EMAIL_FROM
+  const to = order.customerEmail
+
+  if (!configured(apiKey) || !configured(from) || !configured(to)) {
+    logError("Customer refund email skipped because email provider is not configured.", new Error("Missing email configuration."), {
+      orderId: order.id,
+      ...emailConfigState(to)
+    })
+    return false
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from,
+      to,
+      subject: `Your ${storeName} refund confirmation`,
+      text: customerRefundText(order, refundAmountCents, refundReason)
+    })
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "")
+    throw new Error(`Resend customer refund email failed with status ${response.status}: ${body}`)
+  }
+
+  logInfo("Customer refund confirmation email sent.", { orderId: order.id, to })
+  return true
+}
+
 async function notificationAlreadySent(orderId: string, kind: string) {
   try {
     const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
@@ -386,4 +449,29 @@ export async function notifyOrderStatusChanged(orderId: string, previousStatus: 
       logError(`Order status ${label} notification failed.`, result.reason, { orderId, nextStatus, previousStatus })
     }
   })
+}
+
+export async function notifyOrderRefunded(orderId: string, refundAmountCents: number, refundReason: string) {
+  logInfo("Order refund notification flow started.", { orderId, refundAmountCents })
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true }
+  })
+
+  if (!order) {
+    logError("Refund notification skipped because order was not found.", new Error("Order not found."), { orderId })
+    return
+  }
+
+  try {
+    const refunds = await prisma.$queryRaw<RefundNoticeRow[]>`
+      SELECT "refundAmountCents", "refundReason", "refundedAt"
+      FROM "OrderRefund"
+      WHERE "orderId" = ${orderId}
+      ORDER BY "refundedAt" ASC
+    `
+    await sendCustomerRefundEmail({ ...order, refunds }, refundAmountCents, refundReason)
+  } catch (error) {
+    logError("Order refund customer email failed.", error, { orderId, refundAmountCents })
+  }
 }

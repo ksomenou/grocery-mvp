@@ -1,13 +1,21 @@
 import { AdminNav } from "@/components/admin-nav"
 import { EmptyState } from "@/components/admin-static-ui"
 import { AdminActionForm, AdminDeleteForm, ImagePreviewInput, SubmitButton } from "@/components/admin-ui"
+import { PermissionDenied } from "@/components/permission-denied"
 import { createCategory, deleteCategory, updateCategory } from "@/lib/actions"
+import { requirePermission } from "@/lib/admin-auth"
 import { prisma } from "@/lib/prisma"
 import Image from "next/image"
 
 export const dynamic = "force-dynamic"
 
 export default async function AdminCategoriesPage() {
+  try {
+    await requirePermission("categories:manage")
+  } catch {
+    return <PermissionDenied />
+  }
+
   const categories = await prisma.category.findMany({
     include: { _count: { select: { products: true } } },
     orderBy: { name: "asc" }

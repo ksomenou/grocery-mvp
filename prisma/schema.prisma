@@ -15,6 +15,7 @@ enum OrderStatus {
   OUT_FOR_DELIVERY
   DELIVERED
   CANCELLED
+  PARTIALLY_REFUNDED
   REFUNDED
 }
 
@@ -54,6 +55,8 @@ enum DiscountScope {
 enum UserRole {
   CUSTOMER
   ADMIN
+  ORDER_STAFF
+  INVENTORY_STAFF
 }
 
 model User {
@@ -62,11 +65,13 @@ model User {
   email        String   @unique
   passwordHash String
   role         UserRole @default(CUSTOMER)
+  isActive     Boolean  @default(true)
   orders       Order[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@index([email])
+  @@index([isActive])
   @@index([role])
 }
 
@@ -210,6 +215,7 @@ model Order {
   user           User?         @relation(fields: [userId], references: [id])
   customer       Customer?     @relation(fields: [customerId], references: [id])
   items          OrderItem[]
+  refunds        OrderRefund[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -224,6 +230,20 @@ model Order {
   @@index([status, createdAt])
   @@index([stripePaymentIntentId])
   @@index([scheduledDate])
+}
+
+model OrderRefund {
+  id                String   @id @default(cuid())
+  orderId           String
+  stripeRefundId    String?  @unique
+  refundAmountCents Int
+  refundReason      String
+  refundedAt        DateTime @default(now())
+  refundedBy        String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([refundedAt])
 }
 
 model OrderItem {

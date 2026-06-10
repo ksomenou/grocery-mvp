@@ -10,6 +10,7 @@ type FulfillmentStatus =
   | "OUT_FOR_DELIVERY"
   | "DELIVERED"
   | "CANCELLED"
+  | "PARTIALLY_REFUNDED"
   | "REFUNDED"
 
 type FulfillmentMethod = "DELIVERY" | "PICKUP"
@@ -27,6 +28,7 @@ type OrderStatusSnapshot = {
 
 function customerOrderStatusLabel(status: FulfillmentStatus) {
   if (status === "CANCELLED") return "Order cancelled"
+  if (status === "PARTIALLY_REFUNDED") return "Partial refund processed"
   if (status === "REFUNDED") return "Order refunded"
   if (status === "DELIVERED") return "Completed"
   if (status === "PREPARING") return "Preparing"
@@ -47,7 +49,7 @@ function progressIndex(status: FulfillmentStatus) {
   if (status === "DELIVERED") return 3
   if (status === "READY_FOR_PICKUP" || status === "OUT_FOR_DELIVERY") return 2
   if (status === "PREPARING") return 1
-  if (status === "CANCELLED" || status === "REFUNDED") return -1
+  if (status === "CANCELLED" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED") return -1
   return 0
 }
 

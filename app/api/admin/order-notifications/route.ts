@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 
-import { requireAdmin } from "@/lib/admin-auth"
+import { requirePermission } from "@/lib/admin-auth"
 import { formatMoney } from "@/lib/format"
 import { prisma } from "@/lib/prisma"
 
 export async function GET() {
   try {
-    await requireAdmin()
+    await requirePermission("orders:view")
     const order = await prisma.order.findFirst({
       where: {
         paymentStatus: "PAID",
@@ -28,6 +28,6 @@ export async function GET() {
         : null
     })
   } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return NextResponse.json({ error: "You do not have permission to perform this action." }, { status: 401 })
   }
 }

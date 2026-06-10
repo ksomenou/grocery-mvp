@@ -35,7 +35,7 @@ export async function GET(
   return NextResponse.json({
     fulfillmentMethod: order.fulfillmentMethod,
     id: order.id,
-    isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "REFUNDED",
+    isTerminal: order.status === "DELIVERED" || order.status === "CANCELLED" || order.status === "PARTIALLY_REFUNDED" || order.status === "REFUNDED",
     paymentLabel: paymentStatusLabel(order.paymentStatus),
     paymentStatus: order.paymentStatus,
     schedule: formatSchedule(order.scheduledDate, order.scheduledWindow),

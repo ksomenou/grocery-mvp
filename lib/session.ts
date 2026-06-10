@@ -7,7 +7,7 @@ export type SessionPayload = {
   email: string
   id: string
   name: string
-  role: "CUSTOMER" | "ADMIN"
+  role: "CUSTOMER" | "ADMIN" | "ORDER_STAFF" | "INVENTORY_STAFF"
 }
 
 function authSecret() {
