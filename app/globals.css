@@ -1637,11 +1637,13 @@ textarea {
   color: var(--muted);
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   line-height: 1.5;
   margin: 0;
   max-width: 520px;
-  overflow: hidden;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
 }
 
 .hero-copy-block {
@@ -8205,6 +8207,90 @@ textarea {
 
   .department-grid {
     grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .home-hero-carousel {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .home-hero-window {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .home-hero-track {
+    display: flex;
+    width: 100%;
+  }
+
+  .home-hero-slide {
+    flex: 0 0 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hero-copy-block {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .hero-copy-block h2,
+  .hero-copy-block p {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .hero-copy-block p {
+    -webkit-line-clamp: 4;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .hero-trust-badges {
+    display: flex;
+    flex-wrap: wrap;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .hero-trust-badges span {
+    max-width: 100%;
+    white-space: nowrap;
+  }
+
+  .hero-visual {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .hero-image {
+    object-position: center center;
+  }
+
+  .home-hero-window .hero-arrow {
+    top: auto;
+    bottom: 114px;
+    transform: none;
   }
 }
 
